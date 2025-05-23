@@ -1,0 +1,37 @@
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Node.js modules
+node_modules/
+npm-debug.log
+
+# Build artifacts
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# Log files
+*.log
+
+# Sensitive information (DO NOT COMMIT these!)
+.env
+config.local.php
+my_secrets.txt
+
+# 직접 등록한것들
+client_test/
