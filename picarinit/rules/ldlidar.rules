@@ -1,0 +1,4 @@
+# set the udev rule , make the device_port be fixed by ldlidar
+# CP210x USB Device
+KERNEL=="ttyUSB*", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", MODE:="0777", SYMLINK+="ldlidar"
+

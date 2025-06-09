@@ -1,0 +1,1 @@
+KERNEL=="video*",ATTRS{{idVendor}=="32e6", ATTRS{idProduct}=="9005",MODE:="0777", SYMLINK+="usb_cam"
