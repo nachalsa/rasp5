@@ -28,6 +28,9 @@ npm-debug.log
 # Log files
 *.log
 
+# tar files
+*.tar
+
 # Sensitive information (DO NOT COMMIT these!)
 .env
 config.local.php
