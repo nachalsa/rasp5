@@ -1,42 +1,31 @@
 # =================================================================
-# ros2-ci.yml - 최종 완성본 (디스크 공간 확보 기능 강화)
+# ros2-ci.yml - 최종 완성본 (Docker 캐시 및 디스크 공간 확보)
 # =================================================================
 
 name: ROS2 CI for sh-dev branch
 
 on:
-  # 1. sh-dev 브랜치에 코드가 push 될 때 실행
   push:
     branches:
       - sh-dev
-  
-  # 2. 어떤 브랜치에서 sh-dev 브랜치로 Pull Request를 보낼 때 실행
   pull_request:
     branches:
       - sh-dev
 
 jobs:
   build-and-test-on-arm64:
-    # 이 작업은 GitHub이 제공하는 최신 우분투 가상 서버에서 실행됩니다.
     runs-on: ubuntu-latest
-    
-    # 이 작업의 각 단계를 순서대로 정의합니다.
     steps:
       # 0단계: 불필요한 기본 설치 파일들을 제거하여 가상 서버의 디스크 공간을 최대한 확보합니다.
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
-          # 기본적으로 남겨둘 시스템 예약 공간을 512MB로 최소화합니다.
           root-reserve-mb: 512
-          # 스왑 공간을 1GB로 설정합니다.
           swap-size-mb: 1024
-          # 우리 프로젝트와 관련 없는 .NET, Android, Haskell 관련 큰 파일들을 제거합니다.
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
-          # 추가로, 기본 설치된 다른 Docker 이미지들과 모든 문서 파일도 제거하여 공간을 더 확보합니다.
           remove-docker-images: 'true'
-          remove-usr-share-doc: 'true'
 
       # 1단계: 우리 GitHub 저장소의 코드를 가상 서버 안으로 가져옵니다(checkout).
       - name: Checkout repository
@@ -49,8 +38,18 @@ jobs:
       # 3단계: 멀티 아키텍처 Docker 빌드를 위한 Buildx 기능을 활성화합니다.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        
-      # 4단계: 프로젝트의 'Dockerfile'을 이용해 ARM64용 테스트 이미지를 만듭니다.
+      
+      # 4단계: Docker 캐시 설정
+      # GitHub의 캐시 기능을 이용해 Docker 빌드 레이어를 저장하고 불러옵니다.
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.ref }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      # 5단계: 'Dockerfile'을 이용해 ARM64 테스트용 이미지 만들기 (캐시 옵션 추가)
       - name: Build Docker image for testing
         uses: docker/build-push-action@v5
         with:
@@ -60,8 +59,18 @@ jobs:
           tags: my-robot-test-image:latest
           push: false
           load: true
+          # 캐시 사용을 위한 옵션들
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
 
-      # 5단계: 완성된 테스트 이미지로 컨테이너를 실행하고, 그 안에서 실제 빌드와 테스트를 수행합니다.
+      # --- 이 단계가 중요합니다! ---
+      # 빌드 후 임시 캐시를 다음 실행을 위해 이동시켜야 캐시가 유지됩니다.
+      - name: Move Docker cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      # 6단계: 완성된 테스트 이미지로 컨테이너를 실행하고, 그 안에서 실제 빌드와 테스트를 수행합니다.
       - name: Run build and test inside the container
         run: |
           docker run --rm -v ./src:/ros2_ws/src my-robot-test-image:latest /bin/bash -c " \
