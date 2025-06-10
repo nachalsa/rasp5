@@ -1,0 +1,46 @@
+# 이 워크플로우의 이름
+name: ROS2 CI
+
+# 언제 이 워크플로우를 실행할 것인가?
+# 1. main 브랜치에 코드가 push 되었을 때
+# 2. 어떤 브랜치든 Pull Request가 생성/업데이트 되었을 때
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ '**' ]
+
+# 어떤 작업(Job)을 할 것인가?
+jobs:
+  build_and_test:
+    # 어떤 환경의 가상 컴퓨터에서 실행할 것인가? (우분투 최신 버전)
+    runs-on: ubuntu-latest
+
+    # 작업 단계(Steps)를 정의
+    steps:
+      # 1. 내 깃허브 저장소의 코드를 가상 컴퓨터로 가져오는 단계
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. ROS2 환경을 자동으로 설치하고 설정하는 단계 (Humble 버전)
+      # 이게 바로 ROS2용 CI의 핵심!
+      - name: Setup ROS 2
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      # 3. ROS2 의존성 패키지들을 설치하는 단계
+      - name: Install dependencies
+        run: |
+          source /opt/ros/humble/setup.bash
+          sudo apt-get update
+          rosdep install --from-paths src --ignore-src -r -y
+      
+      # 4. 소스 코드를 빌드(컴파일)하는 단계
+      - name: Build workspace
+        uses: ros-tooling/action-ros-ci@v0.3
+        with:
+          package-name: # 여기에 테스트할 패키지 이름들을 적으세요 (예: camera_pkg motor_pkg)
+          target-ros2-distro: humble
+          # colcon build, colcon test 같은 명령어들을 알아서 실행해줍니다.
+
