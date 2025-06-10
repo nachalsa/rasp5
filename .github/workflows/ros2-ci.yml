@@ -26,7 +26,7 @@ jobs:
       - name: Run build-test commands inside container
         run: |
           echo "--- [CI] Starting build & test process ---"
-          docker cp $GITHUB_WORKSPACE/src/. humble:/ros2_ws/src
+          docker cp $GITHUB_WORKSPACE/src/. humble:/home/ubuntu/ros2_ws/src
           docker exec humble /bin/bash -c " \
             set -e && \
             source /opt/ros/humble/setup.bash && \
