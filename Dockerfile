@@ -1,5 +1,5 @@
  =================================================================
-# Dockerfile for Continuous Integration (CI) - 최종 완성본
+# Dockerfile  for Continuous Integration (CI) - 최종 완성본
 # 
 # FROM: Docker Hub에 업로드한 실제 이미지 주소를 정확히 기입합니다.
 # RUN: 로봇의 설정 스크립트에서 가져온 필수 패키지들을 설치합니다.
