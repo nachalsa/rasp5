@@ -1,27 +1,41 @@
-# 1. 러너 프로그램을 설치할 폴더를 만들고, 그 안으로 이동합니다.
-#    (홈 디렉토리에 만드는 것이 일반적입니다.)
-mkdir ~/actions-runner && cd ~/actions-runner
+name: ROS2 CI on Picar Robot
 
-# 2. 러너 프로그램 압축 파일을 다운로드합니다.
-#    (아래 명령어는 GitHub 페이지에 있는 것을 그대로 복사해서 쓰세요. 버전이 다를 수 있습니다.)
-curl -o actions-runner-linux-arm64-2.317.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-arm64-2.317.0.tar.gz
+on:
+  # 1. 다음 브랜치들에 코드가 push 될 때 실행
+  push:
+    branches:
+      - main
+      - sh-dev
+  
+  # 2. 다음 브랜치들을 대상으로 Pull Request가 생성/업데이트 될 때 실행
+  pull_request:
+    branches:
+      - main
+      - sh-dev
 
-# 3. (선택사항) 다운로드된 파일이 깨지지 않았는지 확인합니다.
-#    GitHub 페이지에 있는 checksum 값과 비교해보세요.
-# echo "YOUR_CHECKSUM actions-runner-linux-arm64-2.317.0.tar.gz" | shasum -a 256 -c
+jobs:
+  build-and-test-on-picar:
+    # 이 작업은 GitHub이 아닌, 우리가 등록한 'self-hosted' 러너에서 실행됩니다.
+    runs-on: self-hosted
 
-# 4. 압축을 풉니다.
-tar xzf ./actions-runner-linux-arm64-*.tar.gz
+    steps:
+      # 1단계: GitHub 저장소의 코드를 러너(picar 로봇)의 작업 폴더로 가져옵니다.
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-# 5. [가장 중요!] 러너를 설정합니다.
-#    아래 명령어는 GitHub 페이지에 있는 것을 **그대로 복사**해서 사용해야 합니다.
-#    맨 뒤의 --token 값은 여러분의 저장소에만 부여된 고유한 비밀번호입니다.
-./config.sh --url https://github.com/nachalsa/rasp5 --token YOUR_UNIQUE_TOKEN
-
-#    이 명령어를 실행하면, 몇 가지 질문을 합니다.
-#    - "Enter the name of runner group to add this runner to": 그냥 엔터 (기본 그룹)
-#    - "Enter the name of runner": 그냥 엔터 (로봇 이름인 'picar'가 기본값)
-#    - "Enter any additional labels": 그냥 엔터
-#    - "Enter name of work folder": 그냥 엔터 ('_work'가 기본값)
-
-#    모든 설정이 끝나면 "Settings Saved." 라는 메시지가 나옵니다.
+      # 2단계: 실제 로봇 환경에서 빌드와 테스트를 실행합니다.
+      - name: Build and Test in Native Environment
+        # 로봇은 이미 ROS2 환경이므로, 바로 colcon 명령어를 실행합니다.
+        run: |
+          echo "--- Starting build on Picar Robot ---"
+          # 로봇 자체의 셸을 사용하므로, ROS 환경을 source 해줘야 합니다.
+          source /opt/ros/humble/setup.bash
+          # $GITHUB_WORKSPACE는 러너가 코드를 받아온 폴더입니다.
+          echo "--- Moving to workspace: $GITHUB_WORKSPACE ---"
+          cd $GITHUB_WORKSPACE
+          echo "--- Installing dependencies (rosdep) ---"
+          rosdep install --from-paths src --ignore-src -r -y
+          echo "--- Building workspace (colcon build) ---"
+          colcon build
+          echo "--- Running tests (colcon test) ---"
+          colcon test
