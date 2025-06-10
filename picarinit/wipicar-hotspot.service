@@ -1,0 +1,16 @@
+#sudo vi /etc/systemd/system/wipicar-hotspot.service
+
+[Unit]
+Description=Wipicar Wi-Fi Hotspot Setup and Auto-Connect
+Wants=network-online.target
+After=network-online.target NetworkManager.service
+
+[Service]
+Type=oneshot # 스크립트가 NetworkManager 설정 후 종료되므로 oneshot이 적합
+ExecStart=/usr/local/bin/setup_wipicar_hotspot.sh
+RemainAfterExit=yes # 스크립트 종료 후에도 서비스가 '활성' 상태로 유지
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
