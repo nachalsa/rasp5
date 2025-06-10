@@ -1,83 +1,27 @@
-# =================================================================
-# ros2-ci.yml - 최종 완성본 (Docker 캐시 및 디스크 공간 확보)
-# =================================================================
+# 1. 러너 프로그램을 설치할 폴더를 만들고, 그 안으로 이동합니다.
+#    (홈 디렉토리에 만드는 것이 일반적입니다.)
+mkdir ~/actions-runner && cd ~/actions-runner
 
-name: ROS2 CI for sh-dev branch
+# 2. 러너 프로그램 압축 파일을 다운로드합니다.
+#    (아래 명령어는 GitHub 페이지에 있는 것을 그대로 복사해서 쓰세요. 버전이 다를 수 있습니다.)
+curl -o actions-runner-linux-arm64-2.317.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-arm64-2.317.0.tar.gz
 
-on:
-  push:
-    branches:
-      - sh-dev
-  pull_request:
-    branches:
-      - sh-dev
+# 3. (선택사항) 다운로드된 파일이 깨지지 않았는지 확인합니다.
+#    GitHub 페이지에 있는 checksum 값과 비교해보세요.
+# echo "YOUR_CHECKSUM actions-runner-linux-arm64-2.317.0.tar.gz" | shasum -a 256 -c
 
-jobs:
-  build-and-test-on-arm64:
-    runs-on: ubuntu-latest
-    steps:
-      # 0단계: 불필요한 기본 설치 파일들을 제거하여 가상 서버의 디스크 공간을 최대한 확보합니다.
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@v10
-        with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-docker-images: 'true'
+# 4. 압축을 풉니다.
+tar xzf ./actions-runner-linux-arm64-*.tar.gz
 
-      # 1단계: 우리 GitHub 저장소의 코드를 가상 서버 안으로 가져옵니다(checkout).
-      - name: Checkout repository
-        uses: actions/checkout@v4
+# 5. [가장 중요!] 러너를 설정합니다.
+#    아래 명령어는 GitHub 페이지에 있는 것을 **그대로 복사**해서 사용해야 합니다.
+#    맨 뒤의 --token 값은 여러분의 저장소에만 부여된 고유한 비밀번호입니다.
+./config.sh --url https://github.com/nachalsa/rasp5 --token YOUR_UNIQUE_TOKEN
 
-      # 2단계: 가상 서버(x86_64)가 ARM64 환경을 흉내낼 수 있도록 QEMU를 설정합니다.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+#    이 명령어를 실행하면, 몇 가지 질문을 합니다.
+#    - "Enter the name of runner group to add this runner to": 그냥 엔터 (기본 그룹)
+#    - "Enter the name of runner": 그냥 엔터 (로봇 이름인 'picar'가 기본값)
+#    - "Enter any additional labels": 그냥 엔터
+#    - "Enter name of work folder": 그냥 엔터 ('_work'가 기본값)
 
-      # 3단계: 멀티 아키텍처 Docker 빌드를 위한 Buildx 기능을 활성화합니다.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      # 4단계: Docker 캐시 설정
-      # GitHub의 캐시 기능을 이용해 Docker 빌드 레이어를 저장하고 불러옵니다.
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.ref }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      # 5단계: 'Dockerfile'을 이용해 ARM64 테스트용 이미지 만들기 (캐시 옵션 추가)
-      - name: Build Docker image for testing
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/arm64
-          tags: my-robot-test-image:latest
-          push: false
-          load: true
-          # 캐시 사용을 위한 옵션들
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      # --- 이 단계가 중요합니다! ---
-      # 빌드 후 임시 캐시를 다음 실행을 위해 이동시켜야 캐시가 유지됩니다.
-      - name: Move Docker cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-      # 6단계: 완성된 테스트 이미지로 컨테이너를 실행하고, 그 안에서 실제 빌드와 테스트를 수행합니다.
-      - name: Run build and test inside the container
-        run: |
-          docker run --rm -v ./src:/ros2_ws/src my-robot-test-image:latest /bin/bash -c " \
-            set -e && \
-            source /opt/ros/humble/setup.bash && \
-            cd /ros2_ws && \
-            rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
-            colcon build --symlink-install --event-handlers console_direct+ && \
-            colcon test \
-          "
+#    모든 설정이 끝나면 "Settings Saved." 라는 메시지가 나옵니다.
