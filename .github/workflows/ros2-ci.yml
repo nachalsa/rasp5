@@ -1,54 +1,31 @@
-# =================================================================
-# ros2-ci.yml - 최종 완성본 (Self-hosted Runner + Docker Exec)
-#
-# 이 워크플로우는 GitHub의 가상 서버가 아닌, 우리가 등록한 'picar' 로봇에서 실행됩니다.
-# 그리고 실제 빌드/테스트 명령어들은 'picar' 로봇 안에서 실행 중인
-# 'humble' Docker 컨테이너 내부에서 수행됩니다.
-# =================================================================
-
 name: ROS2 CI on Picar Robot (Docker)
 
 on:
-  # sh-dev 브랜치에 대한 이벤트에만 반응하도록 설정합니다.
   push:
-    branches:
-      - sh-dev
+    branches: [ sh-dev ]
   pull_request:
-    branches:
-      - sh-dev
+    branches: [ sh-dev ]
 
 jobs:
-  # 작업의 이름
   build-and-test-on-picar-docker:
-    # 이 작업은 우리가 등록한 'self-hosted' 러너에서 실행됩니다.
     runs-on: self-hosted
-
-    # 이 작업의 각 단계를 순서대로 정의합니다.
     steps:
-      # 1단계: GitHub 저장소의 최신 코드를 러너(picar 로봇)의 작업 폴더로 가져옵니다.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2단계: 실제 'humble' Docker 컨테이너 내부에서 빌드와 테스트를 실행합니다.
       - name: Build and Test inside 'humble' Container
         run: |
           echo "--- Starting build inside 'humble' container on Picar Robot ---"
           
-          # [핵심] docker exec 명령어를 사용하여, 이미 실행 중인 'humble' 컨테이너 안에서
-          # 뒤따르는 셸 스크립트(/bin/bash -c "...")를 실행합니다.
-          #
-          # 참고: 현재 CI가 코드를 내려받은 폴더($GITHUB_WORKSPACE)는
-          # 로봇의 'actions-runner/_work/rasp5/rasp5' 와 같은 경로입니다.
-          # 하지만 'humble' 컨테이너 설정 시, 로봇의 특정 폴더가 컨테이너 내부와
-          # 공유되도록 미리 설정되어 있을 가능성이 높습니다 (예: -v 옵션).
-          # 만약 파일 공유가 되어있지 않다면, 먼저 'docker cp'를 사용해야 합니다.
-          # 여기서는 공유되어 있다고 가정하고 진행합니다.
-          #
-          # 먼저, 소스 코드를 컨테이너 안으로 복사합니다.
+          # --- 이 부분이 새로 추가됩니다! ---
+          echo "--- Creating workspace directory inside container ---"
+          # -p 옵션은 /ros2_ws/src 경로에 필요한 모든 상위 폴더를 한 번에 만들어줍니다.
+          docker exec humble /bin/bash -c "mkdir -p /ros2_ws/src"
+          
+          # --- 여기서부터는 이전과 동일합니다 ---
           echo "--- Copying source code to container ---"
           docker cp $GITHUB_WORKSPACE/src/. humble:/ros2_ws/src
           
-          # 이제 컨테이너 안에서 빌드/테스트를 실행합니다.
           echo "--- Executing build/test commands inside container ---"
           docker exec humble /bin/bash -c " \
             set -e && \
