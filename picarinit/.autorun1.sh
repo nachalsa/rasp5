@@ -17,7 +17,7 @@ echo "시스템 업데이트 및 업그레이드 완료."
 
 # Vim 설치
 echo "Vim을 설치합니다..."
-sudo apt-get install vim -y
+sudo apt-get install vim-gtk3 -y
 echo "Vim 설치 완료."
 
 # .bashrc 설정 변경
