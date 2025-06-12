@@ -9,9 +9,6 @@ on:
     branches: [ main ]
 
 jobs:
-  # ==========================================================
-  # 작업 1: 코드 정적 분석 (린트) 및 보고서 생성
-  # ==========================================================
   lint-and-report:
     runs-on: ubuntu-22.04
     steps:
@@ -38,9 +35,6 @@ jobs:
           name: pylint-report
           path: reports/
 
-  # ==========================================================
-  # 작업 2: 빌드, 단위 테스트, 통합 테스트 실행
-  # ==========================================================
   build-and-test:
     needs: lint-and-report
     runs-on: ubuntu-22.04
@@ -60,7 +54,6 @@ jobs:
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
-
       - name: Install ROS 2 and Python dependencies
         run: |
           sudo apt-get update
@@ -72,21 +65,21 @@ jobs:
           python3 -m pip install --upgrade pip
           pip3 install -r src/picar_pkg/requirements.txt
       
-      # ▼▼▼▼▼ 바로 이 스텝이 모든 문제를 해결합니다 ▼▼▼▼▼
-      - name: Add Python user bin to PATH
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # 이전의 PATH 추가 스텝은 이제 필요 없습니다. colcon이 알아서 처리합니다.
+      # - name: Add Python user bin to PATH
+      #  run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Build the ROS 2 package
         run: |
           source /opt/ros/humble/setup.bash
           colcon build --packages-select picar_pkg
 
-      - name: Run Unit Tests with Pytest
+      # ▼▼▼▼▼ 바로 이 스텝이 모든 문제를 해결합니다 ▼▼▼▼▼
+      - name: Run Tests with colcon
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
-          pytest tests/
+          colcon test --packages-select picar_pkg --event-handlers console_direct+
 
       - name: Run the Integration Test script
         run: |
