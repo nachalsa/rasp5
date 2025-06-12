@@ -1,0 +1,108 @@
+# 워크플로우 이름
+name: ROS2 CI/CD for Self-Hosted Runner
+
+# 워크플로우 트리거 조건
+on:
+  push:
+    branches: [ sh-dev ] # sh-dev 브랜치에 push 될 때 실행
+  pull_request:
+    branches: [ main ] # main 브랜치로 pull request가 생성될 때 실행
+
+jobs:
+  # 1. 린팅 작업: 코드 스타일 검사
+  linting:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint with Pylint
+        run: |
+          pylint --disable=E0401,C0114,C0116,R0903 \
+               --rcfile=.pylintrc \
+               src/picar_pkg \
+               || true
+
+  # 2. 빌드 및 테스트 작업: 실제 ROS 패키지 빌드 및 테스트
+  build-and-test:
+    needs: linting # linting 작업이 성공해야 실행
+    runs-on: self-hosted # 셀프 호스트 러너에서 실행
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start virtual framebuffer
+        run: Xvfb :99 -screen 0 1024x768x16 &
+
+      - name: Build and Run All Tests
+        env:
+          DISPLAY: ":99"
+        run: |
+          # 1. 셀프 호스트 러너에 설치된 ROS 환경 활성화
+          source /opt/ros/humble/setup.bash
+
+          # 2. 패키지 빌드
+          echo "--- Starting build ---"
+          colcon build --packages-select picar_pkg
+
+          # 3. 빌드된 환경을 활성화하고 테스트 실행
+          echo "--- Starting test ---"
+          source install/setup.bash
+          colcon test --packages-select picar_pkg --event-handlers console_direct+
+
+      - name: Upload Build Artifacts for Deployment
+        # 이 단계는 다음 'deploy-to-local' 작업에 파일을 전달하기 위해 필요합니다.
+        # 테스트가 실패해도 로그 분석을 위해 항상 실행합니다.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-for-deploy
+          path: |
+            build/
+            install/
+            log/
+
+ # --- ★★★ 추가된 CD(배포) 작업 ★★★ ---
+  deploy-to-local:
+    # 3. 배포 작업: 빌드 결과물을 로컬 컴퓨터의 지정된 폴더로 복사
+    needs: build-and-test # build-and-test 작업이 성공해야 실행
+    
+    # sh-dev 브랜치에 push 되었을 때만 이 작업을 실행합니다.
+    # pull_request 에서는 실행되지 않도록 조건을 추가합니다.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/sh-dev'
+
+    runs-on: self-hosted # 빌드와 동일한 셀프 호스트 러너에서 실행
+
+    steps:
+      - name: Download Build Artifacts
+        # 이전 작업에서 업로드한 아티팩트를 다운로드합니다.
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-for-deploy
+
+      - name: Deploy to Local Directory
+        run: |
+          echo "Deploying artifacts to local machine..."
+          
+          # ★★★★★★ 중요 ★★★★★★
+          # 아래 경로를 님의 컴퓨터에서 원하는 실제 경로로 꼭 수정해주세요!
+          # 예: /home/hsh/MergeTeam/RASP5 CI-CD SEREVER/
+          # 이 폴더가 없다면 rsync가 자동으로 생성해줍니다.
+          TARGET_DIR="/home/hsh/MergeTeam/RASP5 CI-CD SEREVER/"
+
+          echo "Target directory is ${TARGET_DIR}"
+          
+          # rsync를 사용해 파일을 복사합니다. (cp -r build install log $TARGET_DIR 보다 효율적)
+          # --delete 옵션: TARGET_DIR에 있지만 현재 빌드 결과물에는 없는 파일은 삭제 (항상 최신 상태 유지)
+          rsync -avh --delete build/ install/ log/ "${TARGET_DIR}/"
+
+          echo "Deployment complete."
