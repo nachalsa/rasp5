@@ -1,6 +1,8 @@
+# setup.py
+
 from setuptools import find_packages, setup
 
-package_name = 'picar_pkg' # 1. 패키지 이름 (package.xml과 동일해야 함)
+package_name = 'picar_pkg'
 
 setup(
     name=package_name,
@@ -18,11 +20,14 @@ setup(
     description='Autonomous Car Project for PicAR',
     license='Apache-2.0',
     tests_require=['pytest'],
+    # ▼▼▼▼▼ 이 부분을 수정합니다 ▼▼▼▼▼
     entry_points={
         'console_scripts': [
-            # '실행명령어 = 경로.파일명:main함수' 형식
-            # 예: ros2 run picar_pkg test_runner
-            'test_runner = src.picar_pkg.test:main',
-            'main_runner = src.picar_pkg.main_node:main',
+            # 'src.' 부분을 모두 제거합니다.
+            'test_runner = picar_pkg.test:main',
+            'main_runner = picar_pkg.main_node:main',
         ],
     },
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+)
+
