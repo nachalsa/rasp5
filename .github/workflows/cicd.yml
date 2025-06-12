@@ -106,14 +106,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ros-dev-tools
 
-      # ▼▼▼▼▼ 최종 에러 해결을 위한 핵심 수정 부분 ▼▼▼▼▼
-      - name: Start virtual framebuffer
+ # ▼▼▼▼▼ 이 단계를 아래 내용으로 교체합니다. ▼▼▼▼▼
+      - name: Install GUI dependencies and start virtual framebuffer
         run: |
-          # 가상 프레임버퍼(가짜 모니터)를 설치하고 백그라운드에서 실행합니다.
-          sudo apt-get install -y xvfb
+          # 운영체제의 패키지 목록을 우선 업데이트합니다.
+          sudo apt-get update
+          
+          # 가상 프레임버퍼(xvfb)와 함께, 에러에서 요구한 GTK3 라이브러리(libgtk-3-0)를 설치합니다.
+          sudo apt-get install -y xvfb libgtk-3-0
+          
+          # 가상 화면을 백그라운드에서 실행합니다.
           Xvfb :99 -screen 0 1024x768x16 &
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
+      - name: Build the ROS 2 package
+        env:
+          DISPLAY: ":99"
+        run: |
+          source /opt/ros/humble/setup.bash
+          colcon build --packages-select picar_pkg
       - name: Build the ROS 2 package
         # env: DISPLAY=":99" -> 이 단계와 이후 모든 단계가 가짜 모니터를 사용하도록 설정
         env:
