@@ -1,52 +1,52 @@
 # =================================================================
-# ros2-ci-cd.yml - CI(테스트)와 CD(배포)를 모두 수행하는 최종 완성본
+# ros2-ci.yml - 오직 코드 검증(CI) 역할만 수행하는 워크플로우
 # =================================================================
 
-name: ROS2 CI and Deploy on Picar Robot
+name: ROS2 CI (Build and Test)
 
 on:
-  # 오직 'main' 브랜치에 코드가 push 될 때만 이 모든 과정을 실행합니다.
-  push:
+  # 'sh-dev' 브랜치를 대상으로 하는 Pull Request가 생성/업데이트 될 때만 실행
+  pull_request:
     branches:
+      - sh-dev
       - main
-
 jobs:
-  # 첫 번째 작업: 코드를 빌드하고 테스트하는 CI 단계
+  # 작업 이름: 코드 빌드 및 테스트
   build_and_test:
-    name: Build and Test
+    name: Build and Test on Picar
     # 이 작업은 우리가 등록한 'self-hosted' 러너에서 실행됩니다.
     runs-on: self-hosted
 
+    # 이 작업은 'humble' Docker 컨테이너를 임시로 사용합니다.
+    # 이렇게 하면 실제 로봇의 /ros2_ws 폴더를 건드리지 않고,
+    # 매번 깨끗한 상태에서 테스트를 수행할 수 있습니다.
+    container:
+      image: hwangsanha7/rasp5-base:humble
+      options: --user root # 컨테이너 내에서 root 권한으로 명령어 실행
+
     steps:
-      # 1. GitHub 저장소의 코드를 로봇의 작업 폴더로 가져옵니다.
+      # 1단계: Pull Request에 포함된 최신 코드를 컨테이너 안의 특정 폴더로 가져옵니다.
+      # 컨테이너를 사용하면, 코드가 바로 컨테이너 내부의 /__w 폴더에 받아집니다.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. `humble` Docker 컨테이너 내부에서 빌드와 테스트를 실행합니다.
-      - name: Run build-test commands inside container
+      # 2단계: 컨테이너 안에서 빌드와 테스트를 실행합니다.
+      - name: Build and Test inside container
+        # 셸을 bash로 지정하고, 작업 디렉토리를 코드 위치로 설정합니다.
+        shell: bash
+        working-directory: /__w/rasp5/rasp5 # actions/checkout이 코드를 받아온 기본 경로
         run: |
           echo "--- [CI] Starting build & test process ---"
-          docker cp $GITHUB_WORKSPACE/src/. humble:/home/ubuntu/ros2_ws/src
-          docker exec humble /bin/bash -c " \
-            set -e && \
-            source /opt/ros/humble/setup.bash && \
-            cd /ros2_ws && \
-            rosdep install --from-paths src --ignore-src -r -y && \
-            colcon build --symlink-install && \
-            colcon test \
-          "
-  
-  # 두 번째 작업: CI가 성공하면, 실제 로봇에 배포하는 CD 단계
-  deploy_to_picar:
-    name: Deploy to Picar
-    # CI 작업(build_and_test)이 성공해야만 이 작업이 실행됩니다.
-    needs: build_and_test
-    # 이 작업 역시 우리 로봇에서 실행됩니다.
-    runs-on: self-hosted
-
-    steps:
-      # 1. 로봇에 미리 만들어 둔 배포 스크립트를 실행합니다.
-      - name: Run deployment script on Picar
-        run: |
-          echo "--- [CD] Triggering deployment script on the host ---"
-          /bin/bash /home/car/deploy.sh
+          
+          # 컨테이너 안에는 이미 ROS2 환경이 있으므로 바로 source 합니다.
+          source /opt/ros/humble/setup.bash
+          
+          echo "--- Installing ROS dependencies (rosdep) ---"
+          # 일부 시스템 의존성 설치를 위해 apt-get update를 먼저 실행합니다.
+          apt-get update && rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
+          
+          echo "--- Building workspace (colcon build) ---"
+          colcon build --symlink-install --event-handlers console_direct+
+          
+          echo "--- Running tests (colcon test) ---"
+          colcon test
