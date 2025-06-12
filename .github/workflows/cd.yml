@@ -1,7 +1,4 @@
-name: CD - Deploy to Picar
-
-# 언제 이 워크플로우를 실행할 것인가?
-# main 브랜치에 push가 일어났을 때만 실행
+# main 또는 sh-dev 브랜치에 push가 일어났을 때만 실행
 on:
   push:
     branches:
@@ -9,14 +6,16 @@ on:
       - sh-dev
 
 jobs:
+  # 'deploy' 라는 이름의 job 정의
   deploy:
-    # 이 job의 이름
+    # 이 job의 표시 이름
     name: Deploy and Run on Picar
     # 우리가 등록한 self-hosted runner에서 실행
     runs-on: self-hosted
 
     steps:
-      # 1. 로봇에 있는 deploy.sh 스크립트를 실행
+      # job에 포함될 단계들 정의
       - name: Execute deployment script
+        # run 과 name 은 같은 레벨이어야 합니다.
         run: |
           bash /home/car/rasp5/deploy.sh
