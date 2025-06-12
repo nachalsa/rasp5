@@ -1,9 +1,15 @@
+# requirements.txt
+
 # Python Linter
 pylint
 
 # Python Test Framework
 pytest
 
-# 기타 필요한 라이브러리 (ROS2 관련 제외)
+# 기타 필요한 라이브러리
 numpy
 opencv-python-headless
+
+# ROS2 테스트 실행에 필요한 의존성
+lark
+
