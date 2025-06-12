@@ -1,51 +1,44 @@
-# =================================================================
-# ros2-ci.yml - 오직 코드 검증(CI) 역할만 수행하는 최종 워크플로우
-# =================================================================
+# .github/workflows/ci.yml
+name: CI - Quality Check (for sh-dev)
 
-name: ROS2 CI (Build and Test)
-
+# 언제 실행? -> sh-dev 브랜치에 코드가 push 되거나, main으로 Pull Request를 보낼 때
 on:
-  # 'sh-dev' 브랜치에 코드가 push 되거나,
-  # 'sh-dev' 브랜치를 대상으로 Pull Request가 생성/업데이트 될 때 실행
   push:
-    branches:
-      - sh-dev
+    branches: [ sh-dev ]
   pull_request:
-    branches:
-      - sh-dev
+    branches: [ main ]
 
 jobs:
-  # 작업 이름: 코드 빌드 및 테스트
-  build_and_test:
-    name: Build and Test on Picar
-    # 이 작업은 우리가 등록한 'self-hosted' 러너에서 실행됩니다.
+  quality_check_and_build:
+    name: Code Quality Check and Build
     runs-on: self-hosted
 
     steps:
-      # 1단계: GitHub 저장소의 코드를 로봇의 작업 폴더로 가져옵니다.
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2단계: 'humble' Docker 컨테이너 내부에서 빌드와 테스트를 실행합니다.
-      - name: Run build-test commands inside container
+      - name: Run Lint, Build, and Test inside Docker
         run: |
-          echo "--- [CI] Starting build & test process for sh-dev ---"
-          
-          # 컨테이너 안에 작업 폴더가 없을 경우를 대비해 미리 생성합니다.
-          docker exec humble /bin/bash -c "mkdir -p /ros2_ws/src"
-          
-          # CI가 내려받은 소스 코드를 컨테이너 안으로 복사합니다.
-          docker cp $GITHUB_WORKSPACE/src/. humble:/ros2_ws/src
-          
-          # 컨테이너 안에서 빌드/테스트 스크립트를 실행합니다.
           docker exec humble /bin/bash -c " \
             set -e && \
             source /opt/ros/humble/setup.bash && \
             cd /ros2_ws && \
-            echo '--- Installing ROS dependencies (rosdep) ---' && \
             rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
-            echo '--- Building workspace (colcon build) ---' && \
-            colcon build --symlink-install && \
-            echo '--- Running tests (colcon test) ---' && \
-            colcon test \
+            colcon lint --packages-select rasp5 && \
+            colcon build --symlink-install --packages-up-to rasp5 && \
+            colcon test --packages-select rasp5 && \
+            colcon test-result --verbose \
           "
+
+      - name: Copy build results for artifact
+        run: |
+          mkdir -p ./artifact_payload
+          docker cp humble:/ros2_ws/install ./artifact_payload/install
+          docker cp humble:/ros2_ws/src ./artifact_payload/src
+
+      - name: Upload Artifact for Deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: ros2-build-artifact
+          path: ./artifact_payload/
+          retention-days: 7
