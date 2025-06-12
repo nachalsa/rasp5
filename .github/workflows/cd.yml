@@ -1,0 +1,27 @@
+# 파일 경로: .github/workflows/cd.yml
+name: CD - Deploy to Picar
+
+on:
+  push:
+    branches: [ main, sh-dev ]
+
+jobs:
+  deploy:
+    name: Download Artifact and Deploy
+    runs-on: self-hosted
+
+    steps:
+      - name: Download Build Artifact from CI
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: ci.yml
+          branch: ${{ github.ref_name }}
+          name: ros2-build-artifact
+
+      - name: Install Artifact to Project Directory
+        run: |
+          rsync -a --delete ./ /home/car/rasp5/
+
+      - name: Restart ROS2 Service
+        run: |
+          sudo systemctl restart picar_ros2.service
