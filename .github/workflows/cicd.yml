@@ -1,93 +1,101 @@
 # 워크플로우 이름
-name: ROS2 CI for Self-Hosted Runner
-# 워크플로우 트리거 조건
+name: ROS2 CI/CD for Self-Hosted Runner
 
+# 워크플로우 트리거 조건
 on:
- push:
-  branches: [ sh-dev ] # sh-dev 브랜치에 push 될 때 실행
- pull_request:
-  branches: [ main ] # main 브랜치로 pull request가 생성될 때 실행
+  push:
+    branches: [ sh-dev ] # sh-dev 브랜치에 push 될 때 실행
+  pull_request:
+    branches: [ main ] # main 브랜치로 pull request가 생성될 때 실행
 
 jobs:
- # 1. 린팅 작업: 코드 스타일 검사
- linting:
-  # 이 작업은 GitHub 호스팅 러너를 사용해도 무방합니다. (또는 self-hosted)
-  runs-on: ubuntu-22.04
-  steps:
-   - name: Checkout repository
-    uses: actions/checkout@v4
+  # 1. 린팅 작업: 코드 스타일 검사
+  linting:
+    # 이 작업은 GitHub 호스팅 러너를 사용해도 무방합니다. (또는 self-hosted)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-- name: Cache pip dependencies
-    uses: actions/cache@v4
-    with:
-     path: ~/.cache/pip
-     key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
-- name: Install Python dependencies
-    run: pip install -r requirements.txt
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
 
-- name: Lint with Pylint
-    run: |
-     pylint --disable=E0401,C0114,C0116,R0903
-         --rcfile=.pylintrc
-         src/picar_pkg
-         || true
+      - name: Lint with Pylint
+        run: |
+          pylint --disable=E0401,C0114,C0116,R0903 \
+            --rcfile=.pylintrc \
+            src/picar_pkg \
+            || true
 
-# 2. 빌드 및 테스트 작업: 실제 ROS 패키지 빌드 및 테스트
- build-and-test:
-  needs: linting # linting 작업이 성공해야 실행
+  # 2. 빌드 및 테스트 작업: 실제 ROS 패키지 빌드 및 테스트
+  build-and-test:
+    needs: linting # linting 작업이 성공해야 실행
+    # ★★★ 중요: 셀프 호스트 러너를 사용하도록 명시합니다. ★★★
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-# ★★★ 중요: 셀프 호스트 러너를 사용하도록 명시합니다. ★★★
-  # 'ubuntu-22.04'가 아닌 'self-hosted'를 사용해야 합니다.
-  # 만약 러너에 'ros-builder' 같은 라벨을 지정했다면 [self-hosted, ros-builder] 와 같이 사용합니다.
-  runs-on: self-hosted
+      - name: Start virtual framebuffer
+        run: Xvfb :99 -screen 0 1024x768x16 &
 
-steps:
-   - name: Checkout repository
-    uses: actions/checkout@v4
-    # 참고: colcon build는 보통 워크스페이스 최상위에서 실행하므로,
-    # 특정 경로(path: src/picar_pkg)로 체크아웃할 필요가 없습니다.
-    # 워크스페이스 구조가 <ws_root>/src/picar_pkg 라고 가정합니다.
+      - name: Build and Run All Tests
+        env:
+          DISPLAY: ":99"
+        run: |
+          # 1. 셀프 호스트 러너에 설치된 ROS 환경 활성화
+          source /opt/ros/humble/setup.bash
 
-# ========================================================================
-   #
-   #  셀프 호스트 러너에는 이미 ROS와 의존성이 설치되어 있으므로,
-   #  시간이 오래 걸리던 아래 단계들은 모두 불필요합니다. 과감히 삭제합니다.
-   #  
-   #  - Cache ROS 2 installation
-   #  - Set up ROS 2
-   #  - Install ROS 2 and Python dependencies (apt-get, rosdep 등)
-   #
-   # ========================================================================
+          # 2. 패키지 빌드
+          echo "--- Starting build ---"
+          colcon build --packages-select picar_pkg
 
-- name: Start virtual framebuffer
-    run: Xvfb :99 -screen 0 1024x768x16 &
+          # 3. 빌드된 환경을 활성화하고 테스트 실행
+          echo "--- Starting test ---"
+          source install/setup.bash
+          colcon test --packages-select picar_pkg --event-handlers console_direct+
 
-- name: Build and Run All Tests
-    env:
-     DISPLAY: ":99"
-    run: |
-     # 1. 셀프 호스트 러너에 설치된 ROS 환경 활성화
-     source /opt/ros/humble/setup.bash
+      - name: Upload Build Artifacts for Deployment
+        # 테스트가 실패해도 항상 이 단계를 실행시켜 로그 파일 등을 다운로드하여 분석할 수 있게 해줍니다.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-for-deploy
+          path: |
+            build/
+            install/
+            log/
 
-# 2. 패키지 빌드
-     echo "--- Starting build ---"
-     colcon build --packages-select picar_pkg
+  # 3. 배포 작업: 빌드 결과물을 로컬 컴퓨터의 지정된 폴더로 복사
+  deploy-to-local:
+    needs: build-and-test # build-and-test 작업이 성공해야 실행
 
-# 3. 빌드된 환경을 활성화하고 테스트 실행
-     echo "--- Starting test ---"
-     source install/setup.bash
-     colcon test --packages-select picar_pkg --event-handlers console_direct+
+    # sh-dev 브랜치에 push 되었을 때만 이 작업을 실행합니다.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/sh-dev'
 
-- name: Upload Build Artifacts
-    # 'if: always()'는 테스트가 실패해도 항상 이 단계를 실행시켜
-    # 로그 파일 등을 다운로드하여 분석할 수 있게 해줍니다.
-    if: always()
-    uses: actions/upload-artifact@v4
-    with:
-     name: build-output-${{ github.run_id }}
-     path: |
-      build/
-      install/
-      log/
+    runs-on: self-hosted # 빌드와 동일한 셀프 호스트 러너에서 실행
+    steps:
+      - name: Download Build Artifacts
+        # 이전 작업에서 업로드한 아티팩트를 다운로드합니다.
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output-for-deploy
 
+      - name: Deploy to Local Directory
+        run: |
+          echo "Deploying artifacts to local machine..."
+
+          # ★★★★★★ 중요 ★★★★★★
+          # 아래 경로를 님의 컴퓨터에서 원하는 실제 경로로 꼭 수정해주세요!
+          TARGET_DIR="/home/hsh/picar_deployed"
+
+          echo "Target directory is ${TARGET_DIR}"
+          rsync -avh --delete build/ install/ log/ "${TARGET_DIR}/"
+
+          echo "Deployment complete."
