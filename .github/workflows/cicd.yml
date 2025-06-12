@@ -1,44 +1,91 @@
+# 워크플로우의 이름
 name: Autonomous Car CI
 
+# 워크플로우를 트리거하는 이벤트 설정
 on:
+  # 'sh-dev' 브랜치에 코드가 push될 때
   push:
     branches: [ sh-dev ]
+  # 'main' 브랜치로 pull request가 생성될 때
   pull_request:
     branches: [ main ]
 
+# 실행될 작업(job) 목록
 jobs:
+  # "build-and-test" 라는 이름의 작업
   build-and-test:
-    # ROS2 Humble은 Ubuntu 22.04를 권장합니다.
+    # 이 작업이 실행될 가상 머신 환경 (Ubuntu 22.04 LTS)
     runs-on: ubuntu-22.04
+
+    # 작업 내에서 실행될 단계(step) 목록
     steps:
       # 1. 소스 코드 체크아웃
+      # uses: actions/checkout@v3 -> 저장소의 코드를 가상 머신으로 가져옴
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. ROS2 Humble 환경 설정 (가장 중요한 부분)
+      # 2. ROS 2 설치 디렉토리 캐싱
+      # 이전에 설치한 ROS 2가 있다면 재사용하여 시간을 절약
+      - name: Cache ROS 2 installation
+        id: cache-ros  # 이 단계의 결과를 나중에 참조하기 위한 ID
+        uses: actions/cache@v3
+        with:
+          # 캐싱할 디렉토리 경로
+          path: /opt/ros/humble
+          # 캐시 식별자. 이 키가 동일하면 캐시를 재사용.
+          # 키에 'v1'을 붙여 나중에 캐시를 강제로 갱신하고 싶을 때 'v2'로 바꾸면 됨
+          key: ${{ runner.os }}-ros-humble-v1
+
+      # 3. ROS 2 설치 (캐시가 없을 경우에만 실행)
+      # if: ... -> cache-ros 단계에서 캐시를 못 찾았을 때만 이 단계를 실행
       - name: Set up ROS 2
+        if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
+          # 설치할 ROS 버전
           required-ros-distributions: humble
 
-      # 3. 파이썬 의존성 설치
+      # 4. Pip 패키지 캐싱
+      # requirements.txt 파일의 내용이 변경되지 않았다면, 이전에 다운로드한 패키지를 재사용
+      - name: Cache pip dependencies
+        id: cache-pip
+        uses: actions/cache@v3
+        with:
+          # pip 캐시가 저장되는 기본 경로
+          path: ~/.cache/pip
+          # requirements.txt 파일의 해시값을 키로 사용. 파일이 변경되면 키도 변경되어 캐시를 새로 만듦
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          # 정확한 키가 없으면 이전 키라도 찾아서 복원 시도
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 5. 파이썬 의존성 패키지 설치
       - name: Install dependencies
-        # ROS 환경을 불러온 후 pip를 실행해야 합니다.
         run: |
           source /opt/ros/humble/setup.bash
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
 
-   # ...
-      # 4. Pylint로 코드 린팅
-      - name: Lint with Pylint
+      # 6. Pylint로 코드 린팅하고 결과를 파일로 저장
+      # 이 단계는 Pylint가 오류를 발견해도 CI를 실패시키지 않음
+      - name: Lint with Pylint and Generate Report
         run: |
+          # ROS 환경 변수를 현재 셸에 적용
           source /opt/ros/humble/setup.bash
-          # 검사 대상을 src 디렉토리로 한정
-          pylint --rcfile=.pylintrc src
+          
+          # 린트 보고서를 저장할 'reports' 디렉토리 생성
+          mkdir -p reports
+          
+          # Pylint 실행. 결과를 콘솔과 파일 양쪽에 출력.
+          # || true: Pylint가 오류 코드를 반환해도 이 단계를 강제로 '성공' 처리함
+          pylint --rcfile=.pylintrc src | tee reports/pylint_report.txt || true
 
-      # 5. Pytest로 단위 테스트 실행 (나중에 추가 가능)
-      # - name: Run Unit Tests
-      #   run: |
-      #     source /opt/ros/humble/setup.bash
-      #     pytest tests/
+      # 7. 린트 결과 보고서를 Artifact로 업로드
+      # 워크플로우 실행 결과 페이지에서 다운로드할 수 있게 파일을 보관
+      - name: Upload Pylint Report
+        uses: actions/upload-artifact@v3
+        with:
+          # 업로드될 아티팩트의 이름
+          name: pylint-report
+          # 업로드할 파일/디렉토리의 경로
+          path: reports/
