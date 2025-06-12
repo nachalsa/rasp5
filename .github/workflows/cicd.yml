@@ -97,32 +97,42 @@ jobs:
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
 
-      # ▼▼▼▼▼ 이전 에러들을 해결하는 핵심 수정 부분 ▼▼▼▼▼
       - name: Install ROS 2 development tools
         run: |
-          # apt가 ROS 저장소를 신뢰하도록 GPG 키를 추가하고 저장소 주소를 등록합니다.
           sudo apt-get update
           sudo apt-get install -y curl
           sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-          
-          # 새로 추가된 저장소 정보로 패키지 목록을 다시 업데이트하고 개발 도구를 설치합니다.
           sudo apt-get update
           sudo apt-get install -y ros-dev-tools
+
+      # ▼▼▼▼▼ 최종 에러 해결을 위한 핵심 수정 부분 ▼▼▼▼▼
+      - name: Start virtual framebuffer
+        run: |
+          # 가상 프레임버퍼(가짜 모니터)를 설치하고 백그라운드에서 실행합니다.
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1024x768x16 &
       # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
       - name: Build the ROS 2 package
+        # env: DISPLAY=":99" -> 이 단계와 이후 모든 단계가 가짜 모니터를 사용하도록 설정
+        env:
+          DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
           colcon build --packages-select picar_pkg
 
       - name: Run Unit Tests with Pytest
+        env:
+          DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           pytest tests/
 
       - name: Run the Integration Test script
+        env:
+          DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
