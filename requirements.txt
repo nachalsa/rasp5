@@ -4,8 +4,6 @@ pylint
 # Python Test Framework
 pytest
 
-# ROS2
-rclpy  # 실제로는 ROS2 설치 시 함께 설치되지만, 명시적으로 관리
-# 기타 필요한 라이브러리
+# 기타 필요한 라이브러리 (ROS2 관련 제외)
 numpy
 opencv-python-headless
