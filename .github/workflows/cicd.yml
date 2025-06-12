@@ -1,102 +1,82 @@
-# 워크플로우 이름
-name: ROS2 CI/CD for Self-Hosted Runner
+# 워크플로우의 이름
+name: Autonomous Car CI (Restructured)
 
-# 워크플로우 트리거 조건
+# 워크플로우를 트리거하는 이벤트 설정
 on:
   push:
-    branches: [ sh-dev ] # sh-dev 브랜치에 push 될 때 실행
+    branches: [ sh-dev ]
   pull_request:
-    branches: [ main ] # main 브랜치로 pull request가 생성될 때 실행
+    branches: [ main ]
 
 jobs:
-  # 1. 린팅 작업: 코드 스타일 검사
   linting:
-    # 이 작업은 GitHub 호스팅 러너를 사용해도 무방합니다. (또는 self-hosted)
+    # (이 작업은 이전과 동일, 변경 없음)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-
       - name: Install Python dependencies
         run: pip install -r requirements.txt
-
       - name: Lint with Pylint
         run: |
           pylint --disable=E0401,C0114,C0116,R0903 \
-            --rcfile=.pylintrc \
-            src/picar_pkg \
-            || true
-
-  # 2. 빌드 및 테스트 작업: 실제 ROS 패키지 빌드 및 테스트
+                 --rcfile=.pylintrc \
+                 src/picar_pkg \
+                 || true
+  # ▼▼▼▼▼ 이 작업의 구조를 완전히 재구성합니다 ▼▼▼▼▼
   build-and-test:
-    needs: linting # linting 작업이 성공해야 실행
-    # ★★★ 중요: 셀프 호스트 러너를 사용하도록 명시합니다. ★★★
-    runs-on: self-hosted
+    needs: linting
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          path: src/picar_pkg
 
+      - name: Cache ROS 2 installation
+        id: cache-ros
+        uses: actions/cache@v4
+        with:
+          path: /opt/ros/humble
+          key: ${{ runner.os }}-ros-humble-v1
+
+      - name: Set up ROS 2
+        if: steps.cache-ros.outputs.cache-hit != 'true'
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: humble
+
+      - name: Install ROS 2 and Python dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            curl gnupg lsb-release xvfb
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y ros-humble-ros-base ros-dev-tools
+          pip install -r src/picar_pkg/requirements.txt
+      
+      # [새로운 구조] 가상 화면을 먼저 켭니다.
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
+      # [새로운 구조] 빌드와 모든 테스트를 하나의 스텝에서 실행합니다.
       - name: Build and Run All Tests
+        # 모든 GUI 출력을 가상 화면으로 보냅니다.
         env:
           DISPLAY: ":99"
         run: |
-          # 1. 셀프 호스트 러너에 설치된 ROS 환경 활성화
+          # ROS 2 환경 활성화
           source /opt/ros/humble/setup.bash
-
-          # 2. 패키지 빌드
-          echo "--- Starting build ---"
+          
+          # 먼저 빌드를 수행합니다.
           colcon build --packages-select picar_pkg
-
-          # 3. 빌드된 환경을 활성화하고 테스트 실행
-          echo "--- Starting test ---"
+          
+          # 빌드된 환경을 활성화하고 모든 테스트를 실행합니다.
           source install/setup.bash
           colcon test --packages-select picar_pkg --event-handlers console_direct+
-
-      - name: Upload Build Artifacts for Deployment
-        # 테스트가 실패해도 항상 이 단계를 실행시켜 로그 파일 등을 다운로드하여 분석할 수 있게 해줍니다.
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-for-deploy
-          path: |
-            build/
-            install/
-            log/
-
-  # 3. 배포 작업: 빌드 결과물을 로컬 컴퓨터의 지정된 폴더로 복사
-  deploy-to-local:
-    needs: build-and-test # build-and-test 작업이 성공해야 실행
-
-    # sh-dev 브랜치에 push 되었을 때만 이 작업을 실행합니다.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/sh-dev'
-
-    runs-on: self-hosted # 빌드와 동일한 셀프 호스트 러너에서 실행
-    steps:
-      - name: Download Build Artifacts
-        # 이전 작업에서 업로드한 아티팩트를 다운로드합니다.
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output-for-deploy
-
-      - name: Deploy to Local Directory
-        run: |
-          echo "Deploying artifacts to local machine..."
-
-          # ★★★★★★ 중요 ★★★★★★
-          # 아래 경로를 님의 컴퓨터에서 원하는 실제 경로로 꼭 수정해주세요!
-          TARGET_DIR="/home/hsh/picar_deployed"
-
-          echo "Target directory is ${TARGET_DIR}"
-          rsync -avh --delete build/ install/ log/ "${TARGET_DIR}/"
-
-          echo "Deployment complete."
-
