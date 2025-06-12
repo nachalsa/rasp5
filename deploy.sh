@@ -13,7 +13,7 @@ echo "✅ Picar> Working directory set to: $(pwd)"
 
 # --- 2. 최신 코드 가져오기 ---
 echo "🔄 Picar> Pulling the latest code from origin/main..."
-git pull origin main
+git pull origin sh-dev
 
 # --- 3. 기존 테스트 스크립트 종료 ---
 # 이전에 실행되던 test.py가 있다면 먼저 종료합니다.
