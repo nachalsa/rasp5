@@ -25,7 +25,11 @@ sleep 1
 # 'src' 폴더 안에 있는 test.py를 파이썬으로 직접 실행합니다.
 # nohup과 &를 사용하여 백그라운드에서 계속 실행되도록 합니다.
 echo "🚀 Picar> Launching src/test.py in the background..."
-nohup python3 src/test.py &
+# 수정 전
+# nohup python3 src/test.py &
+
+# 수정 후: 표준 입출력(stdout, stderr)을 /dev/null로 보내 완전히 독립시킴
+nohup python3 src/test.py > /dev/null 2>&1 &
 
 echo "✅ Picar> Deployment finished successfully! test.py is running."
 
