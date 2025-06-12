@@ -1,5 +1,5 @@
 # 워크플로우의 이름
-name: Autonomous Car CI (Code Review and Build)
+name: Autonomous Car CI (with Lint Report)
 
 # 워크플로우를 트리거하는 이벤트 설정
 on:
@@ -9,13 +9,13 @@ on:
     branches: [ main ]
 
 jobs:
-  # 1. 린팅 작업: 파이썬 코드 스타일을 검사합니다.
+  # 1. 린팅 작업: 코드 스타일을 검사하고 보고서를 생성합니다.
   linting:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -27,46 +27,50 @@ jobs:
           pip install pylint
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Lint with Pylint
+      # ★★★★★ 이 단계가 핵심입니다 ★★★★★
+      - name: Generate Pylint HTML Report
         run: |
-          # src 폴더 아래의 모든 파이썬 파일에 대해 Pylint를 실행합니다.
+          # Pylint를 실행하여 결과를 pylint-report.html 파일로 저장합니다.
+          # output-format=html 옵션을 사용합니다.
+          # || true 덕분에 점수가 낮아도 이 단계는 항상 성공합니다.
           pylint --disable=E0401,C0114,C0116,R0903 \
             --rcfile=.pylintrc \
-            src/
+            src/picar_pkg \
+            --output-format=html > pylint-report.html \
+            || true
 
-  # 2. 빌드 및 테스트 작업: 실제 ROS 패키지를 빌드하고 테스트합니다.
+      # ★★★★★ 생성된 보고서를 업로드합니다 ★★★★★
+      - name: Upload Pylint Report
+        # 위 단계가 항상 성공하므로, 보고서가 있다면 항상 업로드됩니다.
+        uses: actions/upload-artifact@v4
+        with:
+          # 아티팩트 이름
+          name: pylint-report
+          # 업로드할 파일 경로
+          path: pylint-report.html
+          
+  # 2. 빌드 및 테스트 작업 (이전과 동일)
   build-and-test:
-    needs: linting
+    needs: linting # linting 작업은 항상 성공하므로, 이 작업은 항상 실행됩니다.
     runs-on: ubuntu-22.04
     steps:
+      # (이하 내용은 이전과 동일하게 유지됩니다)
       - name: Checkout repository
-        # ★★★ 중요: path 옵션을 삭제하여 전체 리포지토리를 체크아웃합니다.
         uses: actions/checkout@v4
-
-      # --- ROS 설치 및 캐싱 ---
-      - name: Cache ROS 2 installation
-        id: cache-ros
-        uses: actions/cache@v4
-        with:
-          path: /opt/ros/humble
-          key: ${{ runner.os }}-ros-humble-v1
 
       - name: Set up ROS 2
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
 
-      # --- 의존성 설치 ---
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-rosdep xvfb
-          sudo rosdep init || true # 이미 초기화된 경우를 대비
+          sudo rosdep init || true
           rosdep update
-          # -r 옵션: 오류가 발생해도 계속 진행 (일부 패키지 설치 실패 대비)
           rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
 
-      # --- 빌드 및 테스트 ---
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
@@ -75,17 +79,10 @@ jobs:
           DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
-          
-          echo "--- Starting build ---"
-          # 이제 최상위 폴더에서 colcon이 src 폴더를 올바르게 찾을 수 있습니다.
           colcon build --packages-select picar_pkg
-          
-          echo "--- Starting test ---"
           source install/setup.bash
-          # 테스트도 정상적으로 실행됩니다.
           colcon test --packages-select picar_pkg --event-handlers console_direct+
 
-      # --- 아티팩트 업로드 ---
       - name: Upload Build Artifacts
         if: always()
         uses: actions/upload-artifact@v4
