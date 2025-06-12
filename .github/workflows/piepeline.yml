@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run Lint, Build, and Test using Volume Mount
         run: |
+          # ★★★ 여기가 핵심! 우리가 새로 만들 'rasp5-ci:humble' 이미지를 사용합니다. ★★★
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/ros2_ws" \
             rasp5-ci:humble /bin/bash -c " \
