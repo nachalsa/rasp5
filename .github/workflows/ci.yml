@@ -1,4 +1,5 @@
 # 파일 경로: .github/workflows/ci.yml
+
 name: CI - Lint, Build, Test and Create Artifact
 
 on:
@@ -17,21 +18,40 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Lint, Build, and Test inside CI Container
+        # 이 단계에서 사용하는 모든 경로는 GitHub Actions가 제공하는
+        # 환경 변수인 GITHUB_WORKSPACE를 기반으로 동적으로 설정됩니다.
         run: |
+          echo "--- Starting CI process inside 'ci-runner' container ---"
           docker exec ci-runner /bin/bash -c " \
             set -e && \
             cd /ros2_ws && \
-            cp -r /__w/rasp5/rasp5/src/. ./src/ && \
+            echo '--- Copying source code from runner to container ---' && \
+            # [수정된 핵심 부분]
+            # 고정된 경로 '/__w/rasp5/rasp5/src/.' 대신,
+            # $GITHUB_WORKSPACE 변수를 사용하여 실제 소스 코드 위치를 정확히 가리킵니다.
+            cp -r $GITHUB_WORKSPACE/src/. ./src/ && \
+            
+            echo '--- Sourcing ROS2 environment ---' && \
             source /opt/ros/humble/setup.bash && \
+            
+            echo '--- Installing ROS dependencies ---' && \
             rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
+            
+            echo '--- [1/3] Linting code ---' && \
             colcon lint --packages-select rasp5 && \
+
+            echo '--- [2/3] Building workspace ---' && \
             colcon build --symlink-install --packages-up-to rasp5 && \
+
+            echo '--- [3/3] Running tests ---' && \
             colcon test --packages-select rasp5 && \
+            echo '--- Displaying test results ---' && \
             colcon test-result --verbose \
           "
 
       - name: Copy build results from CI Container
         run: |
+          echo "--- Preparing artifact payload ---"
           mkdir -p ./artifact_payload
           docker cp ci-runner:/ros2_ws/install ./artifact_payload/install
           docker cp ci-runner:/ros2_ws/src ./artifact_payload/src
@@ -42,3 +62,4 @@ jobs:
           name: ros2-build-artifact
           path: ./artifact_payload/
           retention-days: 7
+
