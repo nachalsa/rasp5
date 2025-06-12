@@ -3,10 +3,8 @@ name: Autonomous Car CI
 
 # 워크플로우를 트리거하는 이벤트 설정
 on:
-  # 'sh-dev' 브랜치에 코드가 push될 때
   push:
     branches: [ sh-dev ]
-  # 'main' 브랜치로 pull request가 생성될 때
   pull_request:
     branches: [ main ]
 
@@ -16,55 +14,27 @@ jobs:
   # 작업 1: 코드 정적 분석 (린트) 및 보고서 생성
   # ==========================================================
   lint-and-report:
-    # 이 작업이 실행될 가상 머신 환경
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    # ★ 이 작업 전체를 ROS2 개발 도구가 설치된 Docker 컨테이너 안에서 실행
+    container:
+      image: ros:humble-ros-dev-llm-1
     
-    # 작업 내에서 실행될 단계(step) 목록
     steps:
       # 1-1. 소스 코드 체크아웃
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1-2. ROS 2 설치 디렉토리 캐싱
-      - name: Cache ROS 2 installation
-        id: cache-ros
-        uses: actions/cache@v4
-        with:
-          path: /opt/ros/humble
-          key: ${{ runner.os }}-ros-humble-v1
-
-      # 1-3. ROS 2 설치 (캐시가 없을 경우에만 실행)
-      - name: Set up ROS 2
-        if: steps.cache-ros.outputs.cache-hit != 'true'
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: humble
-
-      # 1-4. Pip 패키지 캐싱
-      - name: Cache pip dependencies
-        id: cache-pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      # 1-5. 파이썬 의존성 패키지 설치
+      # 1-2. 파이썬 의존성 패키지 설치
       - name: Install dependencies
-        run: |
-          source /opt/ros/humble/setup.bash
-          python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
+        run: pip3 install -r requirements.txt
 
-      # 1-6. Pylint로 코드 린팅하고 결과를 파일로 저장 (실패해도 중단 안 함)
+      # 1-3. Pylint로 코드 린팅하고 결과를 파일로 저장 (실패해도 중단 안 함)
       - name: Lint with Pylint and Generate Report
         run: |
-          source /opt/ros/humble/setup.bash
           mkdir -p reports
           pylint --rcfile=.pylintrc src | tee reports/pylint_report.txt || true
 
-      # 1-7. 린트 결과 보고서를 Artifact로 업로드
+      # 1-4. 린트 결과 보고서를 Artifact로 업로드
       - name: Upload Pylint Report
         uses: actions/upload-artifact@v4
         with:
@@ -72,76 +42,37 @@ jobs:
           path: reports/
 
   # ==========================================================
-  # 작업 2: ROS2 패키지 빌드, 단위 테스트, 통합 테스트 실행
+  # 작업 2: 빌드, 단위 테스트, 통합 테스트 실행
   # ==========================================================
   build-and-test:
-    # 'lint-and-report' 작업이 성공해야만 이 작업이 실행됨
+    # 'lint-and-report' 작업이 끝나야만 이 작업이 실행됨
     needs: lint-and-report
-    # 이 작업이 실행될 가상 머신 환경
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    # ★ 이 작업 역시 동일한 Docker 컨테이너 안에서 실행
+    container:
+      image: ros:humble-ros-dev-llm-1
 
-    # 작업 내에서 실행될 단계(step) 목록
     steps:
       # 2-1. 소스 코드 체크아웃
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2-2. ROS 2 설치 디렉토리 캐싱 (위 작업과 동일)
-      - name: Cache ROS 2 installation
-        id: cache-ros
-        uses: actions/cache@v4
-        with:
-          path: /opt/ros/humble
-          key: ${{ runner.os }}-ros-humble-v1
-
-      # 2-3. ROS 2 설치 (캐시가 없을 경우에만 실행)
-      - name: Set up ROS 2
-        if: steps.cache-ros.outputs.cache-hit != 'true'
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: humble
-
-      # 2-4. Pip 패키지 캐싱 (위 작업과 동일)
-      - name: Cache pip dependencies
-        id: cache-pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      # 2-5. 파이썬 의존성 패키지 설치
+      # 2-2. 파이썬 의존성 패키지 설치
       - name: Install dependencies
-        run: |
-          source /opt/ros/humble/setup.bash
-          python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
-    # ▼▼▼▼▼ 이 새로운 단계를 추가합니다 ▼▼▼▼▼
-      - name: Install ROS 2 development tools
-        run: |
-          source /opt/ros/humble/setup.bash
-          sudo apt-get update
-          sudo apt-get install -y ros-dev-tools
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        run: pip3 install -r requirements.txt
 
-
-      # 2-6. ROS2 패키지 빌드 (★ 여기서 실패하면 워크플로우 실패)
+      # 2-3. ROS2 패키지 빌드 (★ 여기서 실패하면 워크플로우 실패)
       - name: Build the ROS 2 package
-        run: |
-          source /opt/ros/humble/setup.bash
-          colcon build --packages-select picar_pkg
-
-      # 2-7. 단위 테스트 실행 (★ 여기서 실패하면 워크플로우 실패)
+        run: colcon build --packages-select picar_pkg
+          
+      # 2-4. 단위 테스트 실행 (★ 여기서 실패하면 워크플로우 실패)
       - name: Run Unit Tests with Pytest
         run: |
-          source /opt/ros/humble/setup.bash
           source install/setup.bash
           pytest tests/
 
-      # 2-8. 통합 테스트용 스크립트 실행 (★ 여기서 실패하면 워크플로우 실패)
+      # 2-5. 통합 테스트용 스크립트 실행 (★ 여기서 실패하면 워크플로우 실패)
       - name: Run the Integration Test script
         run: |
-          source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 run picar_pkg test_runner --ros-args -l INFO
