@@ -1,11 +1,10 @@
-# .github/workflows/ci.yml (Final Version)
+# .github/workflows/ci.yml (Final Version -
+# "ci-runner" 컨테이너 사용)
 name: CI - Lint, Build, Test and Create Artifact
 
 on:
-  push:
-    branches: [ sh-dev ]
-  pull_request:
-    branches: [ main ]
+  push: { branches: [ sh-dev ] }
+  pull_request: { branches: [ main ] }
 
 jobs:
   quality_check_and_build:
@@ -16,36 +15,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Lint, Build, and Test inside Custom Docker
+      - name: Run Lint, Build, and Test inside CI Container
         run: |
-          echo "--- Starting full CI process using 'rasp5-ci:humble' image ---"
-          # 우리가 만든 커스텀 Docker 이미지(rasp5-ci:humble)를 사용합니다.
-          docker exec rasp5-ci:humble /bin/bash -c " \
+          echo "--- Starting CI process inside 'ci-runner' container ---"
+          # 이제 'humble' 대신, 우리가 CI 전용으로 만든 'ci-runner' 컨테이너를 사용합니다.
+          docker exec ci-runner /bin/bash -c " \
             set -e && \
             source /opt/ros/humble/setup.bash && \
             cd /ros2_ws && \
-            echo '--- Installing ROS dependencies (rosdep) ---' && \
+            echo '--- Installing ROS dependencies ---' && \
             rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
             
-            echo '--- [Step 1/3] Linting code ---' && \
+            echo '--- [1/3] Linting code ---' && \
             colcon lint --packages-select rasp5 && \
 
-            echo '--- [Step 2/3] Building workspace ---' && \
+            echo '--- [2/3] Building workspace ---' && \
             colcon build --symlink-install --packages-up-to rasp5 && \
 
-            echo '--- [Step 3/3] Running tests ---' && \
+            echo '--- [3/3] Running tests ---' && \
             colcon test --packages-select rasp5 && \
-            echo '--- Displaying test results ---' && \
             colcon test-result --verbose \
           "
 
-      - name: Copy build results from container
+      - name: Copy build results from CI Container
         run: |
           echo "--- Preparing artifact payload ---"
           mkdir -p ./artifact_payload
-          # 컨테이너 이름(rasp5-ci:humble)을 정확히 명시하여 복사합니다.
-          docker cp rasp5-ci:humble:/ros2_ws/install ./artifact_payload/install
-          docker cp rasp5-ci:humble:/ros2_ws/src ./artifact_payload/src
+          # 'ci-runner' 컨테이너에서 결과물을 복사합니다.
+          docker cp ci-runner:/ros2_ws/install ./artifact_payload/install
+          docker cp ci-runner:/ros2_ws/src ./artifact_payload/src
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
