@@ -1,0 +1,7 @@
+[MASTER]
+# 최대 라인 길이
+max-line-length=9120
+
+[MESSAGES CONTROL]
+# 특정 경고 비활성화 (예: C0114 - missing-module-docstring)
+disable=C0114,C0115,C0116

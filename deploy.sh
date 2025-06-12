@@ -1,35 +1,20 @@
 #!/bin/bash
 
-# ===================================================================
-# GitHub Actions를 통해 호출되는 자동 배포 스크립트 (test.py 용)
-# ===================================================================
-
+# 에러 발생 시 스크립트 중지
 set -e
 
-# --- 1. 프로젝트 디렉토리로 이동 ---
-PROJECT_DIR=$(dirname "$0")
-cd "$PROJECT_DIR"
-echo "✅ Picar> Working directory set to: $(pwd)"
+echo ">> 1. 최신 소스 코드를 main 브랜치에서 가져옵니다..."
+git fetch origin main
+git checkout main
+git pull origin main
 
-# --- 2. 최신 코드 가져오기 ---
-echo "🔄 Picar> Pulling the latest code from origin/main..."
-git pull origin sh-dev
+echo ">> 2. Docker Compose를 사용하여 기존 컨테이너를 중지하고 삭제합니다..."
+# 컨테이너가 실행 중이지 않아도 오류가 발생하지 않도록 `|| true` 추가
+docker-compose down || true
 
-# --- 3. 기존 테스트 스크립트 종료 ---
-# 이전에 실행되던 test.py가 있다면 먼저 종료합니다.
-echo "🔄 Picar> Attempting to stop existing test.py process..."
-pkill -f "python3 src/test.py" || true
-sleep 1
+echo ">> 3. 새로운 코드로 Docker 이미지를 다시 빌드합니다..."
+docker-compose build
 
-# --- 4. 새로운 테스트 스크립트 실행 ---
-# 'src' 폴더 안에 있는 test.py를 파이썬으로 직접 실행합니다.
-# nohup과 &를 사용하여 백그라운드에서 계속 실행되도록 합니다.
-echo "🚀 Picar> Launching src/test.py in the background..."
-# 수정 전
-# nohup python3 src/test.py &
-
-# 수정 후: 표준 입출력(stdout, stderr)을 /dev/null로 보내 완전히 독립시킴
-nohup python3 src/test.py > /dev/null 2>&1 &
-
-echo "✅ Picar> Deployment finished successfully! test.py is running."
+echo ">> 4. 새로운 이미지로 컨테이너를 백그라운드에서 시작합니다..."
+docker-compose up -d
 

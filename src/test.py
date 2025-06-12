@@ -1,22 +1,27 @@
-# test.py
-import time
-from datetime import datetime
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
 
-log_file_path = "/tmp/test_log.txt"
+class MyPublisherNode(Node):
+    def __init__(self):
+        super().__init__('my_publisher_node')
+        self.publisher_ = self.create_publisher(String, 'topic', 10)
+        timer_period = 0.5  # seconds
+        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.get_logger().info('Publisher node has been started.')
 
-print("--- 자율주행 테스트 코드 시작 ---")
+    def timer_callback(self):
+        msg = String()
+        msg.data = 'Hello from the autonomous car!'
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
 
-with open(log_file_path, "a") as f:
-    f.write(f"스크립트 시작: {datetime.now()}\n")
+def main(args=None):
+    rclpy.init(args=args)
+    node = MyPublisherNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
-count = 0
-while True:
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    message = f"[{count}] 자율주행 중... 현재 시각: {current_time}"
-    print(message)
-    
-    with open(log_file_path, "a") as f:
-        f.write(message + "\n")
-        
-    count += 1
-    time.sleep(1)
+if __name__ == '__main__':
+    main()
