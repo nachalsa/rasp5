@@ -25,10 +25,9 @@ jobs:
       - name: Lint with Pylint
         run: |
           pylint --disable=E0401,C0114,C0116,R0903 \
-            --rcfile=.pylintrc \
-            src/picar_pkg \
-            || true
-
+                 --rcfile=.pylintrc \
+                 src/picar_pkg \
+                 || true
   # ▼▼▼▼▼ 이 작업의 구조를 완전히 재구성합니다 ▼▼▼▼▼
   build-and-test:
     needs: linting
@@ -36,8 +35,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        # with:
-        #   path: src/picar_pkg # colcon build는 워크스페이스 루트에서 실행하므로 이 줄은 주석 처리하거나 삭제하는 것이 좋습니다.
+        with:
+          path: src/picar_pkg
 
       - name: Cache ROS 2 installation
         id: cache-ros
@@ -47,37 +46,40 @@ jobs:
           key: ${{ runner.os }}-ros-humble-v1
 
       - name: Set up ROS 2
-        # if: steps.cache-ros.outputs.cache-hit != 'true'  # 이 라인은 ROS 설치 단계가 분리되어 있을 때 더 유용합니다. 우선 전체 설치로 단순화합니다.
+        if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
 
-      - name: Install dependencies
+      - name: Install ROS 2 and Python dependencies
         run: |
+          sudo apt-get update && sudo apt-get install -y \
+            curl gnupg lsb-release xvfb
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-          # rosdep install을 위해 필요한 도구 설치
-          sudo apt-get install -y python3-rosdep
-          # rosdep 초기화 및 업데이트
-          sudo rosdep init
-          rosdep update
-          # 실제 의존성 설치
-          rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
-
+          sudo apt-get install -y ros-humble-ros-base ros-dev-tools
+          pip install -r src/picar_pkg/requirements.txt
+      
+      # [새로운 구조] 가상 화면을 먼저 켭니다.
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
+      # [새로운 구조] 빌드와 모든 테스트를 하나의 스텝에서 실행합니다.
       - name: Build and Run All Tests
+        # 모든 GUI 출력을 가상 화면으로 보냅니다.
         env:
           DISPLAY: ":99"
         run: |
+          # ROS 2 환경 활성화
           source /opt/ros/humble/setup.bash
-          echo "--- Starting build ---"
+          
+          # 먼저 빌드를 수행합니다.
           colcon build --packages-select picar_pkg
-          echo "--- Starting test ---"
+          
+          # 빌드된 환경을 활성화하고 모든 테스트를 실행합니다.
           source install/setup.bash
-          colcon test --packages-select picar_pkg --event-handlers console_direct+
-
-      # ★★★★★★★★★★ 추가된 부분 (가장 중요) ★★★★★★★★★★
+          colcon test --packages-select picar_pkg --event-handlers console_direct+    # ★★★★★★★★★★ 추가된 부분 (가장 중요) ★★★★★★★★★★
       - name: Upload Build Artifacts
         # 테스트가 실패해도 로그 분석을 위해 아티팩트는 항상 업로드합니다.
         if: always()
