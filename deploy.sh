@@ -14,7 +14,7 @@ set -e
 # --- 사용자 설정 변수 (이곳만 수정하세요!) ---
 ROS_DISTRO="humble"
 PACKAGE_NAME="rasp5"
-LAUNCH_FILE="cicd.test.py"
+LAUNCH_FILE="test.py"
 
 # --- 1. 프로젝트 디렉토리로 이동 ---
 # 이 스크립트 파일이 위치한 디렉토리로 안전하게 이동합니다.
