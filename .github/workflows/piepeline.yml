@@ -1,0 +1,82 @@
+# 파일 경로: .github/workflows/pipeline.yml
+# 역할: CI와 CD를 하나의 파이프라인으로 통합하여 순서를 보장합니다.
+
+name: Main CI/CD Pipeline
+
+on:
+  push:
+    # sh-dev 와 main 브랜치에 push가 일어났을 때 이 전체 파이프라인이 시작됩니다.
+    branches: [ sh-dev, main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # ===============================================
+  # JOB 1: CI (품질 검사 및 아티팩트 생성)
+  # ===============================================
+  build_and_test:
+    name: 1. Build, Test & Create Artifact
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Lint, Build, and Test inside CI Container
+        run: |
+          docker exec ci-runner /bin/bash -c " \
+            set -e && \
+            cd /ros2_ws && \
+            cp -r $GITHUB_WORKSPACE/src/. ./src/ && \
+            source /opt/ros/humble/setup.bash && \
+            rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
+            colcon lint --packages-select rasp5 && \
+            colcon build --symlink-install --packages-up-to rasp5 && \
+            colcon test --packages-select rasp5 && \
+            colcon test-result --verbose \
+          "
+
+      - name: Copy build results from CI Container
+        run: |
+          mkdir -p ./artifact_payload
+          docker cp ci-runner:/ros2_ws/install ./artifact_payload/install
+          docker cp ci-runner:/ros2_ws/src ./artifact_payload/src
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ros2-build-artifact
+          path: ./artifact_payload/
+          retention-days: 7
+
+  # ===============================================
+  # JOB 2: CD (배포)
+  # ===============================================
+  deploy:
+    name: 2. Deploy to Picar
+    runs-on: self-hosted
+
+    # [가장 중요한 부분 1]
+    # 이 'deploy' job은, 반드시 'build_and_test' job이 성공적으로 끝나야만 시작됩니다.
+    needs: build_and_test
+
+    # [가장 중요한 부분 2]
+    # 'sh-dev' 브랜치와 'main' 브랜치 모두에서 실행되도록 합니다.
+    # 만약 main에서만 배포하고 싶다면, 아래 if 조건을 수정하면 됩니다.
+    # 예: if: github.ref == 'refs/heads/main'
+    if: success() # 이전 job이 성공했을 때만 실행
+
+    steps:
+      # 이제 같은 워크플로우 안에 있으므로, 표준 액션을 사용해도 안정적입니다.
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ros2-build-artifact
+
+      - name: Install Artifact to Project Directory
+        run: |
+          rsync -a --delete ./ /home/car/rasp5/
+
+      - name: Restart ROS2 Service
+        run: |
+          sudo systemctl restart picar_ros2.service
