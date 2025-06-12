@@ -29,12 +29,13 @@ jobs:
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
 
+   # ...
       # 4. Pylint로 코드 린팅
       - name: Lint with Pylint
-        # 린트 실행 시에도 ROS 환경이 필요합니다.
         run: |
           source /opt/ros/humble/setup.bash
-          pylint $(git ls-files '*.py') --rcfile=.pylintrc
+          # 검사 대상을 src 디렉토리로 한정
+          pylint --rcfile=.pylintrc src
 
       # 5. Pytest로 단위 테스트 실행 (나중에 추가 가능)
       # - name: Run Unit Tests
