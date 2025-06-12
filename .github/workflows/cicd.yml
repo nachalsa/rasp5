@@ -49,7 +49,7 @@ jobs:
           name: pylint-report
           path: reports/
 
-  # ==========================================================
+    # ==========================================================
   # 작업 2: 빌드, 단위 테스트, 통합 테스트 실행
   # ==========================================================
   build-and-test:
@@ -58,14 +58,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # 1. 소스 코드 체크아웃
-      # ROS 2 워크스페이스 구조(workspace/src/package_name)에 맞게 경로 지정
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           path: src/picar_pkg
 
       # 2. ROS 2 설치 캐싱
-      # 캐시가 있으면 ROS 2 설치를 건너뛰어 시간을 절약
       - name: Cache ROS 2 installation
         id: cache-ros
         uses: actions/cache@v4
@@ -80,15 +78,28 @@ jobs:
         with:
           required-ros-distributions: humble
 
-      # 4. [핵심] rosdep으로 모든 의존성 설치
-      # libspdlog.so.1 같은 누락된 공유 라이브러리 문제를 해결하는 가장 확실한 방법
-      - name: Install All Dependencies with rosdep
+      # 4. [핵심 수정] ROS 2 저장소 설정 및 rosdep 설치
+      - name: Setup ROS 2 sources and install dependencies
         run: |
+          # apt가 https를 통해 저장소에 접근할 수 있도록 도구 설치
           sudo apt-get update
-          # rosdep 도구 자체를 설치
+          sudo apt-get install -y curl gnupg lsb-release
+
+          # ROS 2 GPG 키 추가
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          
+          # apt 소스 리스트에 ROS 2 저장소 추가
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+          # 저장소 목록 다시 업데이트 (이제 ROS 2 저장소를 인식함)
+          sudo apt-get update
+
+          # 이제 python3-rosdep 패키지를 찾아서 설치할 수 있음
           sudo apt-get install -y python3-rosdep
+
           # rosdep 초기화 및 데이터베이스 업데이트
           sudo rosdep init && rosdep update
+          
           # package.xml을 기반으로 워크스페이스에 필요한 모든 의존성을 설치
           rosdep install --from-paths src --ignore-src -y --rosdistro humble
 
@@ -101,7 +112,6 @@ jobs:
       # 6. 단위 테스트 실행
       - name: Run Unit Tests with Pytest
         run: |
-          # 빌드된 환경과 ROS 2 시스템 환경을 모두 활성화
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           pytest tests/
@@ -109,7 +119,6 @@ jobs:
       # 7. 통합 테스트 실행
       - name: Run the Integration Test script
         run: |
-          # 빌드된 환경과 ROS 2 시스템 환경을 모두 활성화
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 run picar_pkg test_runner
