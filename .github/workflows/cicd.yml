@@ -63,20 +63,20 @@ jobs:
 
       - name: Install ROS 2 and Python dependencies
         run: |
-          # 1. ROS 2 apt 저장소 설정
           sudo apt-get update
           sudo apt-get install -y curl gnupg lsb-release
           sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-
-          # 2. ROS 2 핵심 패키지와 개발 도구 설치
           sudo apt-get install -y ros-humble-ros-base ros-dev-tools
-
-          # 3. [핵심 수정] pytest 등 Python 의존성 설치
           python3 -m pip install --upgrade pip
           pip3 install -r src/picar_pkg/requirements.txt
       
+      # ▼▼▼▼▼ 바로 이 스텝이 모든 문제를 해결합니다 ▼▼▼▼▼
+      - name: Add Python user bin to PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
       - name: Build the ROS 2 package
         run: |
           source /opt/ros/humble/setup.bash
@@ -93,4 +93,3 @@ jobs:
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           ros2 run picar_pkg test_runner
-
