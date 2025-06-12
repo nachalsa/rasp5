@@ -1,4 +1,6 @@
 # 파일 경로: .github/workflows/pipeline.yml
+# 역할: 가장 단순하고 확실한 구조로 CI/CD를 수행합니다.
+
 name: Main CI/CD Pipeline
 on:
   push: { branches: [ sh-dev, main ] }
@@ -6,72 +8,74 @@ on:
 
 jobs:
   # ===============================================
-  # JOB 1: CI (품질 검사 및 아티팩트 생성)
+  # JOB 1: CI (로봇에 있는 'ci-runner'를 사용)
   # ===============================================
   build_and_test:
     name: 1. Build, Test & Create Artifact
     runs-on: self-hosted
 
-    # [★ 최종 해결책 ★]
-    # 이 job의 모든 steps는 아래에 명시된 Docker 컨테이너 안에서 실행됩니다.
-    container:
-      image: rasp5-ci:humble  # 우리가 로봇에 만들어 둔 바로 그 이미지!
-      # 소스 코드를 마운트할 필요 없이, Actions가 자동으로 현재 작업공간을 연결해줍니다.
-
     steps:
-      # 1. 컨테이너 안으로 소스 코드를 가져옵니다.
+      # 1. Runner의 작업 공간으로 소스 코드를 다운로드합니다.
       - name: Checkout repository
         uses: actions/checkout@v4
-        # checkout의 기본 경로는 컨테이너 안의 /__w/rasp5/rasp5가 됩니다.
 
-      # 2. 이제 모든 명령어는 컨테이너 안에서 직접 실행됩니다!
-      - name: Run Lint, Build, and Test
-        # 더 이상 복잡한 'docker run' 구문이 필요 없습니다.
+      # 2. [★최종 해결책★] 로봇에 항상 켜져 있는 'ci-runner' 컨테이너에게 일을 시킵니다.
+      - name: Run CI tasks inside the running container
         run: |
-          set -e
-          source /opt/ros/humble/setup.bash
-          # Actions가 checkout한 소스 코드가 있는 작업 공간으로 이동합니다.
-          cd /__w/rasp5/rasp5
-          
-          echo '--- Installing ROS dependencies ---'
-          rosdep install --from-paths src --ignore-src -r -y --rosdistro humble
-          
-          echo '--- [1/3] Linting code ---'
-          colcon lint --packages-select rasp5
-          
-          echo '--- [2/3] Building workspace ---'
-          colcon build --symlink-install --packages-up-to rasp5
-          
-          echo '--- [3/3] Running tests ---'
-          colcon test --packages-select rasp5
-          colcon test-result --verbose
+          # 먼저, Runner의 소스 코드를 컨테이너 안으로 복사합니다.
+          # GITHUB_WORKSPACE는 Runner의 소스 코드 경로를 담고 있습니다.
+          docker cp "$GITHUB_WORKSPACE/src" ci-runner:/ros2_ws/
 
-      # 3. Artifact 업로드
-      - name: Upload Source Code as Artifact
+          # 이제, 컨테이너 안에서 작업을 수행하라고 명령합니다.
+          docker exec ci-runner /bin/bash -c " \
+            set -e && \
+            source /opt/ros/humble/setup.bash && \
+            cd /ros2_ws && \
+            rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
+            colcon lint --packages-select rasp5 && \
+            colcon build --symlink-install --packages-up-to rasp5 && \
+            colcon test --packages-select rasp5 && \
+            colcon test-result --verbose \
+          "
+
+      # 3. 빌드 결과물을 아티팩트로 만듭니다.
+      - name: Copy build results from container for artifact
+        run: |
+          mkdir -p ./artifact_payload
+          docker cp ci-runner:/ros2_ws/install ./artifact_payload/install
+          
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: source-code-artifact
-          # 소스 코드가 있는 현재 작업 공간을 통째로 올립니다.
-          path: .
+          name: build-artifact
+          path: ./artifact_payload/
 
   # ===============================================
-  # JOB 2: CD (배포) - 이 부분은 변경 없음
+  # JOB 2: CD (배포)
   # ===============================================
   deploy:
     name: 2. Deploy to Picar
     runs-on: self-hosted
     needs: build_and_test
     if: success()
+
     steps:
-      - name: Download Source Artifact
+      # CD 단계에서는 CI가 만든 '빌드 결과물'을 다운로드합니다.
+      - name: Download Build Artifact
         uses: actions/download-artifact@v4
         with:
-          name: source-code-artifact
-      - name: Install Source Code and Build on Robot
+          name: build-artifact
+      
+      # 소스 코드도 따로 받아옵니다 (설정 파일 등이 필요할 수 있으므로).
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Artifact and Source to Project Directory
         run: |
-          rsync -a --delete ./ /home/car/rasp5/ && \
-          cd /home/car/rasp5 && \
-          source /opt/ros/humble/setup.bash && \
-          colcon build --symlink-install
+          # 먼저 소스 코드를 설치 (설정 파일 등을 위해)
+          rsync -a --delete "$GITHUB_WORKSPACE/" /home/car/rasp5/ --exclude 'install' --exclude 'build' --exclude 'log'
+          # 그 위에 빌드 결과물(install 폴더)을 덮어씁니다.
+          rsync -a --delete ./install/ /home/car/rasp5/install/
+
       - name: Restart ROS2 Service
         run: sudo systemctl restart picar_ros2.service
