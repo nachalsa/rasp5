@@ -117,6 +117,14 @@ jobs:
           source /opt/ros/humble/setup.bash
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
+    # ▼▼▼▼▼ 이 새로운 단계를 추가합니다 ▼▼▼▼▼
+      - name: Install ROS 2 development tools
+        run: |
+          source /opt/ros/humble/setup.bash
+          sudo apt-get update
+          sudo apt-get install -y ros-dev-tools
+      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
 
       # 2-6. ROS2 패키지 빌드 (★ 여기서 실패하면 워크플로우 실패)
       - name: Build the ROS 2 package
