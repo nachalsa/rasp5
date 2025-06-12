@@ -19,4 +19,4 @@ jobs:
       # 1. 로봇에 있는 deploy.sh 스크립트를 실행
       - name: Execute deployment script
         run: |
-          bash ~/rasp5/deploy.sh
+          bash /home/car/rasp5/deploy.sh
