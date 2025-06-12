@@ -1,5 +1,5 @@
 # 워크플로우의 이름
-name: Autonomous Car CI (Restructured)
+name: Autonomous Car CI (Code Review and Build)
 
 # 워크플로우를 트리거하는 이벤트 설정
 on:
@@ -9,35 +9,41 @@ on:
     branches: [ main ]
 
 jobs:
+  # 1. 린팅 작업: 파이썬 코드 스타일을 검사합니다.
   linting:
-    # (이 작업은 이전과 동일, 변경 없음)
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
       - name: Lint with Pylint
         run: |
+          # src 폴더 아래의 모든 파이썬 파일에 대해 Pylint를 실행합니다.
           pylint --disable=E0401,C0114,C0116,R0903 \
-                 --rcfile=.pylintrc \
-                 src/picar_pkg \
-                 || true
-  # ▼▼▼▼▼ 이 작업의 구조를 완전히 재구성합니다 ▼▼▼▼▼
+            --rcfile=.pylintrc \
+            src/
+
+  # 2. 빌드 및 테스트 작업: 실제 ROS 패키지를 빌드하고 테스트합니다.
   build-and-test:
     needs: linting
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
+        # ★★★ 중요: path 옵션을 삭제하여 전체 리포지토리를 체크아웃합니다.
         uses: actions/checkout@v4
-        with:
-          path: src/picar_pkg
 
+      # --- ROS 설치 및 캐싱 ---
       - name: Cache ROS 2 installation
         id: cache-ros
         uses: actions/cache@v4
@@ -46,48 +52,45 @@ jobs:
           key: ${{ runner.os }}-ros-humble-v1
 
       - name: Set up ROS 2
-        if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
 
-      - name: Install ROS 2 and Python dependencies
+      # --- 의존성 설치 ---
+      - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y \
-            curl gnupg lsb-release xvfb
-          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y ros-humble-ros-base ros-dev-tools
-          pip install -r src/picar_pkg/requirements.txt
-      
-      # [새로운 구조] 가상 화면을 먼저 켭니다.
+          sudo apt-get install -y python3-rosdep xvfb
+          sudo rosdep init || true # 이미 초기화된 경우를 대비
+          rosdep update
+          # -r 옵션: 오류가 발생해도 계속 진행 (일부 패키지 설치 실패 대비)
+          rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
+
+      # --- 빌드 및 테스트 ---
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
-      # [새로운 구조] 빌드와 모든 테스트를 하나의 스텝에서 실행합니다.
       - name: Build and Run All Tests
-        # 모든 GUI 출력을 가상 화면으로 보냅니다.
         env:
           DISPLAY: ":99"
         run: |
-          # ROS 2 환경 활성화
           source /opt/ros/humble/setup.bash
           
-          # 먼저 빌드를 수행합니다.
+          echo "--- Starting build ---"
+          # 이제 최상위 폴더에서 colcon이 src 폴더를 올바르게 찾을 수 있습니다.
           colcon build --packages-select picar_pkg
           
-          # 빌드된 환경을 활성화하고 모든 테스트를 실행합니다.
+          echo "--- Starting test ---"
           source install/setup.bash
-          colcon test --packages-select picar_pkg --event-handlers console_direct+    # ★★★★★★★★★★ 추가된 부분 (가장 중요) ★★★★★★★★★★
+          # 테스트도 정상적으로 실행됩니다.
+          colcon test --packages-select picar_pkg --event-handlers console_direct+
+
+      # --- 아티팩트 업로드 ---
       - name: Upload Build Artifacts
-        # 테스트가 실패해도 로그 분석을 위해 아티팩트는 항상 업로드합니다.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          # 아티팩트 이름 (이 이름으로 GitHub에 저장됨)
           name: build-output
-          # 업로드할 파일/폴더 경로
           path: |
             build/
             install/
