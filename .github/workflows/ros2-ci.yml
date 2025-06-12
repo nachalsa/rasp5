@@ -1,7 +1,6 @@
-# .github/workflows/ci.yml
-name: CI - Quality Check (for sh-dev)
+# .github/workflows/ci.yml (Final Version)
+name: CI - Lint, Build, Test and Create Artifact
 
-# 언제 실행? -> sh-dev 브랜치에 코드가 push 되거나, main으로 Pull Request를 보낼 때
 on:
   push:
     branches: [ sh-dev ]
@@ -17,26 +16,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Lint, Build, and Test inside Docker
+      - name: Run Lint, Build, and Test inside Custom Docker
         run: |
-          docker exec humble /bin/bash -c " \
+          echo "--- Starting full CI process using 'rasp5-ci:humble' image ---"
+          # 우리가 만든 커스텀 Docker 이미지(rasp5-ci:humble)를 사용합니다.
+          docker exec rasp5-ci:humble /bin/bash -c " \
             set -e && \
             source /opt/ros/humble/setup.bash && \
             cd /ros2_ws && \
+            echo '--- Installing ROS dependencies (rosdep) ---' && \
             rosdep install --from-paths src --ignore-src -r -y --rosdistro humble && \
+            
+            echo '--- [Step 1/3] Linting code ---' && \
             colcon lint --packages-select rasp5 && \
+
+            echo '--- [Step 2/3] Building workspace ---' && \
             colcon build --symlink-install --packages-up-to rasp5 && \
+
+            echo '--- [Step 3/3] Running tests ---' && \
             colcon test --packages-select rasp5 && \
+            echo '--- Displaying test results ---' && \
             colcon test-result --verbose \
           "
 
-      - name: Copy build results for artifact
+      - name: Copy build results from container
         run: |
+          echo "--- Preparing artifact payload ---"
           mkdir -p ./artifact_payload
-          docker cp humble:/ros2_ws/install ./artifact_payload/install
-          docker cp humble:/ros2_ws/src ./artifact_payload/src
+          # 컨테이너 이름(rasp5-ci:humble)을 정확히 명시하여 복사합니다.
+          docker cp rasp5-ci:humble:/ros2_ws/install ./artifact_payload/install
+          docker cp rasp5-ci:humble:/ros2_ws/src ./artifact_payload/src
 
-      - name: Upload Artifact for Deployment
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ros2-build-artifact
