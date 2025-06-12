@@ -99,3 +99,4 @@ jobs:
           rsync -avh --delete build/ install/ log/ "${TARGET_DIR}/"
 
           echo "Deployment complete."
+
