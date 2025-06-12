@@ -1,7 +1,7 @@
-# 워크플로우의 이름
-name: Autonomous Car CI (with Lint Report)
+# 워크플로우 이름
+name: Autonomous Car CI (with Lint Log)
 
-# 워크플로우를 트리거하는 이벤트 설정
+# 워크플로우 트리거 조건
 on:
   push:
     branches: [ sh-dev ]
@@ -9,7 +9,7 @@ on:
     branches: [ main ]
 
 jobs:
-  # 1. 린팅 작업: 코드 스타일을 검사하고 보고서를 생성합니다.
+  # 1. 린팅 작업: 코드 스타일을 검사하고 로그 파일을 생성합니다.
   linting:
     runs-on: ubuntu-22.04
     steps:
@@ -27,34 +27,30 @@ jobs:
           pip install pylint
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # ★★★★★ 이 단계가 핵심입니다 ★★★★★
-      - name: Generate Pylint HTML Report
+      - name: Generate Pylint Log File
         run: |
-          # Pylint를 실행하여 결과를 pylint-report.html 파일로 저장합니다.
-          # output-format=html 옵션을 사용합니다.
-          # || true 덕분에 점수가 낮아도 이 단계는 항상 성공합니다.
-          pylint --disable=E0401,C0114,C0116,R0903 \
-            --rcfile=.pylintrc \
-            src/picar_pkg \
-            --output-format=html > pylint-report.html \
+          # Pylint 실행 결과를 pylint-log.txt 파일로 저장합니다.
+          # 검사 대상은 'src' 폴더 전체입니다.
+          # || true 덕분에 점수가 낮아도 이 단계는 항상 성공으로 처리됩니다.
+          pylint --rcfile=.pylintrc \
+            --disable=E0401,C0114,C0116,R0903 \
+            src > pylint-log.txt \
             || true
 
-      # ★★★★★ 생성된 보고서를 업로드합니다 ★★★★★
-      - name: Upload Pylint Report
-        # 위 단계가 항상 성공하므로, 보고서가 있다면 항상 업로드됩니다.
+      - name: Upload Pylint Log
+        # 위 단계가 항상 성공하므로, 로그 파일이 있다면 항상 업로드됩니다.
         uses: actions/upload-artifact@v4
         with:
           # 아티팩트 이름
-          name: pylint-report
+          name: pylint-log
           # 업로드할 파일 경로
-          path: pylint-report.html
-          
-  # 2. 빌드 및 테스트 작업 (이전과 동일)
+          path: pylint-log.txt
+
+  # 2. 빌드 및 테스트 작업
   build-and-test:
-    needs: linting # linting 작업은 항상 성공하므로, 이 작업은 항상 실행됩니다.
+    needs: linting # linting 작업이 성공해야 이 작업이 실행됩니다.
     runs-on: ubuntu-22.04
     steps:
-      # (이하 내용은 이전과 동일하게 유지됩니다)
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -67,8 +63,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y python3-rosdep xvfb
-          sudo rosdep init || true
+          sudo rosdep init || true # 이미 초기화된 경우를 대비하여 오류 방지
           rosdep update
+          # -r 옵션: 오류가 발생해도 계속 진행 (일부 패키지 설치 실패 대비)
           rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
 
       - name: Start virtual framebuffer
@@ -79,11 +76,16 @@ jobs:
           DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
+          
+          echo "--- Starting build ---"
           colcon build --packages-select picar_pkg
+          
+          echo "--- Starting test ---"
           source install/setup.bash
           colcon test --packages-select picar_pkg --event-handlers console_direct+
 
       - name: Upload Build Artifacts
+        # 테스트가 실패해도 로그 분석을 위해 아티팩트는 항상 업로드합니다.
         if: always()
         uses: actions/upload-artifact@v4
         with:
