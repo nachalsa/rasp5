@@ -19,19 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache ROS 2 installation
-        id: cache-ros
-        uses: actions/cache@v4
-        with:
-          path: /opt/ros/humble
-          key: ${{ runner.os }}-ros-humble-v1
-
-      - name: Set up ROS 2
-        if: steps.cache-ros.outputs.cache-hit != 'true'
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: humble
-
+      # pip 패키지 다운로드 캐싱
       - name: Cache pip dependencies
         id: cache-pip
         uses: actions/cache@v4
@@ -41,18 +29,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Install dependencies
+      # Python 의존성 설치 (pylint 등)
+      - name: Install Python dependencies
         run: |
-          source /opt/ros/humble/setup.bash
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
 
+      # Pylint 실행 및 보고서 파일 생성
       - name: Lint with Pylint and Generate Report
         run: |
-          source /opt/ros/humble/setup.bash
           mkdir -p reports
-          pylint --rcfile=.pylintrc src | tee reports/pylint_report.txt || true
+          # pylint가 실패해도 CI가 멈추지 않도록 || true 추가
+          pylint --rcfile=.pylintrc src/picar_pkg | tee reports/pylint_report.txt || true
 
+      # 생성된 린트 보고서를 아티팩트로 업로드
       - name: Upload Pylint Report
         uses: actions/upload-artifact@v4
         with:
@@ -63,12 +53,19 @@ jobs:
   # 작업 2: 빌드, 단위 테스트, 통합 테스트 실행
   # ==========================================================
   build-and-test:
+    # 'lint-and-report' 작업이 성공해야만 이 작업이 실행됨
     needs: lint-and-report
     runs-on: ubuntu-22.04
     steps:
+      # 1. 소스 코드 체크아웃
+      # ROS 2 워크스페이스 구조(workspace/src/package_name)에 맞게 경로 지정
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          path: src/picar_pkg
 
+      # 2. ROS 2 설치 캐싱
+      # 캐시가 있으면 ROS 2 설치를 건너뛰어 시간을 절약
       - name: Cache ROS 2 installation
         id: cache-ros
         uses: actions/cache@v4
@@ -76,75 +73,43 @@ jobs:
           path: /opt/ros/humble
           key: ${{ runner.os }}-ros-humble-v1
 
+      # 3. ROS 2 설치 (캐시가 없을 경우에만 실행)
       - name: Set up ROS 2
         if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
 
-      - name: Cache pip dependencies
-        id: cache-pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: |
-          source /opt/ros/humble/setup.bash
-          python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
-
-      - name: Install ROS 2 development tools
+      # 4. [핵심] rosdep으로 모든 의존성 설치
+      # libspdlog.so.1 같은 누락된 공유 라이브러리 문제를 해결하는 가장 확실한 방법
+      - name: Install All Dependencies with rosdep
         run: |
           sudo apt-get update
-          sudo apt-get install -y curl
-          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y ros-dev-tools
+          # rosdep 도구 자체를 설치
+          sudo apt-get install -y python3-rosdep
+          # rosdep 초기화 및 데이터베이스 업데이트
+          sudo rosdep init && rosdep update
+          # package.xml을 기반으로 워크스페이스에 필요한 모든 의존성을 설치
+          rosdep install --from-paths src --ignore-src -y --rosdistro humble
 
- # ▼▼▼▼▼ 이 단계를 아래 내용으로 교체합니다. ▼▼▼▼▼
-      - name: Install GUI dependencies and start virtual framebuffer
-        run: |
-          # 운영체제의 패키지 목록을 우선 업데이트합니다.
-          sudo apt-get update
-          
-          # 가상 프레임버퍼(xvfb)와 함께, 에러에서 요구한 GTK3 라이브러리(libgtk-3-0)를 설치합니다.
-          sudo apt-get install -y xvfb libgtk-3-0
-          
-          # 가상 화면을 백그라운드에서 실행합니다.
-          Xvfb :99 -screen 0 1024x768x16 &
-      # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
+      # 5. 워크스페이스 빌드
       - name: Build the ROS 2 package
-        env:
-          DISPLAY: ":99"
-        run: |
-          source /opt/ros/humble/setup.bash
-          colcon build --packages-select picar_pkg
-      - name: Build the ROS 2 package
-        # env: DISPLAY=":99" -> 이 단계와 이후 모든 단계가 가짜 모니터를 사용하도록 설정
-        env:
-          DISPLAY: ":99"
         run: |
           source /opt/ros/humble/setup.bash
           colcon build --packages-select picar_pkg
 
+      # 6. 단위 테스트 실행
       - name: Run Unit Tests with Pytest
-        env:
-          DISPLAY: ":99"
         run: |
+          # 빌드된 환경과 ROS 2 시스템 환경을 모두 활성화
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           pytest tests/
 
+      # 7. 통합 테스트 실행
       - name: Run the Integration Test script
-        env:
-          DISPLAY: ":99"
         run: |
+          # 빌드된 환경과 ROS 2 시스템 환경을 모두 활성화
           source /opt/ros/humble/setup.bash
           source install/setup.bash
-          ros2 run picar_pkg test_runner --ros-args -l INFO
+          ros2 run picar_pkg test_runner
