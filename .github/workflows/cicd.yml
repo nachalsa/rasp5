@@ -8,17 +8,12 @@ on:
   pull_request:
     branches: [ main ]
 
-# 실행될 작업(job) 목록
 jobs:
-  # ==========================================================
-  # 작업 1: 코드 정적 분석 (린트) 및 보고서 생성
-  # ==========================================================
   lint-and-report:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Cache pip dependencies
         id: cache-pip
         uses: actions/cache@v4
@@ -27,26 +22,20 @@ jobs:
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
-
       - name: Install Python dependencies
         run: |
           python3 -m pip install --upgrade pip
           pip3 install -r requirements.txt
-
       - name: Lint with Pylint and Generate Report
         run: |
           mkdir -p reports
           pylint --rcfile=.pylintrc src/picar_pkg | tee reports/pylint_report.txt || true
-
       - name: Upload Pylint Report
         uses: actions/upload-artifact@v4
         with:
           name: pylint-report
           path: reports/
 
-  # ==========================================================
-  # 작업 2: 빌드, 단위 테스트, 통합 테스트 실행
-  # ==========================================================
   build-and-test:
     needs: lint-and-report
     runs-on: ubuntu-22.04
@@ -55,60 +44,38 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: src/picar_pkg
-
       - name: Cache ROS 2 installation
         id: cache-ros
         uses: actions/cache@v4
         with:
           path: /opt/ros/humble
           key: ${{ runner.os }}-ros-humble-v1
-
       - name: Set up ROS 2
         if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
-
-      # [핵심 수정] rosdep 명령어 실행 방식을 더 안정적으로 변경
       - name: Setup ROS 2 sources and install dependencies
         run: |
-          # apt가 https를 통해 저장소에 접근할 수 있도록 도구 설치
           sudo apt-get update
           sudo apt-get install -y curl gnupg lsb-release
-
-          # ROS 2 GPG 키 추가
           sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-          
-          # apt 소스 리스트에 ROS 2 저장소 추가
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
-
-          # 저장소 목록 다시 업데이트 (이제 ROS 2 저장소를 인식함)
           sudo apt-get update
-
-          # python3-rosdep 패키지 설치
           sudo apt-get install -y python3-rosdep
-
-          # rosdep 초기화 및 데이터베이스 업데이트 (sudo로 실행하여 권한 문제 해결)
+          sudo rm -rf /etc/ros/rosdep/sources.list.d/20-default.list
           sudo rosdep init
-          rosdep update
-          
-          # package.xml을 기반으로 워크스페이스에 필요한 모든 의존성을 설치
-          # -i (또는 --ignore-src) : 소스에 이미 있는 패키지는 무시
-          # -y : 모든 프롬프트에 'yes'로 자동 응답
-          # --rosdistro : 사용할 ROS 배포판 명시
+          for i in 1 2 3; do rosdep update && break || sleep 5; done
           rosdep install -i --from-paths src -y --rosdistro humble
-
       - name: Build the ROS 2 package
         run: |
           source /opt/ros/humble/setup.bash
           colcon build --packages-select picar_pkg
-
       - name: Run Unit Tests with Pytest
         run: |
           source /opt/ros/humble/setup.bash
           source install/setup.bash
           pytest tests/
-
       - name: Run the Integration Test script
         run: |
           source /opt/ros/humble/setup.bash
