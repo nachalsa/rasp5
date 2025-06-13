@@ -1,6 +1,7 @@
 # 워크플로우 이름
-name: Autonomous Car CI (Standard ROS2 Structure)
+name: Autonomous Car CI (Optimized Cache)
 
+# 워크플로우 트리거 조건
 on:
   push:
     branches: [ sh-dev ]
@@ -8,7 +9,7 @@ on:
     branches: [ main ]
 
 jobs:
-  # 1. 린팅 작업: 코드 스타일 검사
+  # 1. 린팅 작업: 코드 스타일 검사 (변경 없음)
   linting:
     runs-on: ubuntu-22.04
     steps:
@@ -24,16 +25,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pylint
-          # ★★★ 이제 requirements.txt는 패키지 안에 있습니다.
           if [ -f src/picar_pkg/requirements.txt ]; then pip install -r src/picar_pkg/requirements.txt; fi
 
       - name: Generate Pylint Log File
         run: |
-          # ★★★ .pylintrc 파일도 이제 패키지 안에 있습니다.
-          # 검사 대상은 src 폴더 전체로 유지합니다.
-          pylint --rcfile=./src/picar_pkg/.pylintrc \
+          find src -name "*.py" -print0 > python_files.list
+          xargs -0 pylint --rcfile=./src/picar_pkg/.pylintrc \
             --disable=E0401,C0114,C0116,R0903 \
-            src > pylint-log.txt \
+            < python_files.list > pylint-log.txt \
             || true
       
       - name: Upload Pylint Log
@@ -42,7 +41,7 @@ jobs:
           name: pylint-log
           path: pylint-log.txt
 
-  # 2. 빌드 및 테스트 작업
+  # 2. 빌드 및 테스트 작업 (캐싱 최적화 적용)
   build-and-test:
     needs: linting
     runs-on: ubuntu-22.04
@@ -50,20 +49,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up ROS 2
-        uses: ros-tooling/setup-ros@v0.7
+      # ★★★★★ 이 부분이 핵심 수정 사항입니다 ★★★★★
+      - name: Cache ROS 2 and Dependencies
+        id: cache-ros-deps # 이 캐시 단계에 ID를 부여합니다.
+        uses: actions/cache@v4 # 캐시 액션 최신 버전 사용
         with:
-          required-ros-distributions: humble
+          # 캐싱할 대상 경로 목록
+          path: |
+            /opt/ros/humble        # ROS 2 설치 경로
+            /var/lib/apt/lists     # apt 패키지 목록 캐시
+            ~/.cache/pip           # pip 패키지 캐시
+          
+          # 캐시를 식별하는 고유 키
+          # 패키지 설정 파일(package.xml, requirements.txt)이 변경되면 새로운 캐시를 생성합니다.
+          key: ${{ runner.os }}-ros-humble-deps-v3-${{ hashFiles('src/picar_pkg/package.xml', 'src/picar_pkg/requirements.txt') }}
+          
+          # key가 정확히 일치하지 않을 때, 이전 버전의 캐시라도 불러오기 위한 설정
+          restore-keys: |
+            ${{ runner.os }}-ros-humble-deps-v3-
 
-      - name: Install dependencies
+      # ★★★★★ 의존성 설치 단계 수정 ★★★★★
+      - name: Install ROS 2 and Dependencies
+        # if 조건문을 사용: 캐시를 찾았을 경우(cache-hit), 이 단계를 건너뜁니다.
+        # 이렇게 하면, 의존성이 변경되지 않았을 때 시간이 오래 걸리는 설치 과정을 생략할 수 있습니다.
+        if: steps.cache-ros-deps.outputs.cache-hit != 'true'
         run: |
+          echo "Cache not found, running full installation..."
           sudo apt-get update
           sudo apt-get install -y python3-rosdep xvfb
           sudo rosdep init || true
           rosdep update
-          # ★★★ colcon은 항상 'src'폴더가 있는 워크스페이스 루트에서 실행되어야 합니다.
           rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
+      # ROS 환경 설정은 캐시 유무와 상관없이 항상 필요합니다.
+      - name: Set up ROS 2 Environment
+        run: source /opt/ros/humble/setup.bash
+
+      # ★★★★★ 이하 단계는 기존과 동일합니다 ★★★★★
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
@@ -71,15 +95,14 @@ jobs:
         env:
           DISPLAY: ":99"
         run: |
+          # run 블록 안에서는 환경을 다시 활성화해줘야 합니다.
           source /opt/ros/humble/setup.bash
           
           echo "--- Starting build ---"
-          # ★★★ 워크스페이스의 루트(리포지토리 루트)에서 실행합니다.
           colcon build --packages-select picar_pkg
           
           echo "--- Starting test ---"
           source install/setup.bash
-          # ★★★ colcon test가 이제 src/picar_pkg/test 폴더를 찾아 실행합니다.
           colcon test --packages-select picar_pkg --event-handlers console_direct+
 
       - name: Upload Build Artifacts
