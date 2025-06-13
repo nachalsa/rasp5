@@ -52,7 +52,6 @@
 
 "자율주행이 아니라 정해진 경로만 이동하는 하드코딩된 로봇"의 코드를 HLD와 UML로 설명하는 것은 "신뢰성 높고 예측 가능한 **사전 정의된 시퀀스(Pre-defined Sequence) 기반 제어**" 설계 의도를 명확하게 보여줄 수 있습니다.
 
- 
 ### 로봇 제어 시스템 HLD (High-level Design)
 
 ```mermaid
@@ -82,9 +81,11 @@ graph TD
     style D fill:#f9f,stroke:#333,stroke-width:4px;
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
     
-### 클래스 다이어그램 (Class Diagram)
+    
+    
+ ### 클래스 다이어그램 (Class Diagram)
 
-```mermaid
+```mermaid      
 classDiagram
     class CombinedMecanumController {
         <<Attributes (Data)>>
@@ -108,3 +109,5 @@ classDiagram
         -move_diagonal(speed, duration)
         -move_lateral(speed, duration)
     }
+
+    

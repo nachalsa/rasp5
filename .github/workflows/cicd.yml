@@ -1,97 +1,82 @@
-# 워크플로우 이름
-name: Autonomous Car CI 
+# 워크플로우의 이름
+name: Autonomous Car CI (Restructured)
 
-# ★★★★★ 이 부분이 핵심 수정 사항입니다 ★★★★★
+# 워크플로우를 트리거하는 이벤트 설정
 on:
-  # 모든 브랜치에 push가 발생할 때 워크플로우를 실행합니다.
   push:
-    branches:
-      - '**' # '**'는 모든 브랜치를 의미하는 와일드카드입니다.
-
-  # 모든 브랜치에서 main 브랜치로 pull request가 생성될 때도 실행합니다.
+    branches: [ sh-dev ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  # 1. 린팅 작업: (이하 내용은 이전과 동일)
   linting:
+    # (이 작업은 이전과 동일, 변경 없음)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
         with:
-          python-version: '3.10'
-      - run: |
-          python -m pip install --upgrade pip
-          pip install pylint
-          if [ -f src/picar_pkg/requirements.txt ]; then pip install -r src/picar_pkg/requirements.txt; fi
-      - name: Generate Pylint Log File
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+      - name: Lint with Pylint
         run: |
-          find src -name "*.py" -print0 > python_files.list
-          xargs -0 pylint --rcfile=./src/picar_pkg/.pylintrc \
-            --disable=E0401,C0114,C0116,R0903 \
-            < python_files.list > pylint-log.txt \
-            || true
-      - name: Upload Pylint Log
-        uses: actions/upload-artifact@v4
-        with:
-          name: pylint-log
-          path: pylint-log.txt
-
-  # 2. 빌드 및 테스트 작업 (무조건 통과)
+          pylint --disable=E0401,C0114,C0116,R0903 \
+                 --rcfile=.pylintrc \
+                 src/picar_pkg \
+                 || true
+  # ▼▼▼▼▼ 이 작업의 구조를 완전히 재구성합니다 ▼▼▼▼▼
   build-and-test:
     needs: linting
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: src/picar_pkg
+
+      - name: Cache ROS 2 installation
+        id: cache-ros
+        uses: actions/cache@v4
+        with:
+          path: /opt/ros/humble
+          key: ${{ runner.os }}-ros-humble-v1
+
       - name: Set up ROS 2
+        if: steps.cache-ros.outputs.cache-hit != 'true'
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
-     - name: Cache Dependencies
-        id: cache-deps
-        uses: actions/cache@v4
-        with:
-          # ★★★ /var/lib/apt/lists 를 제외하고, ROS 설치 경로와 pip 캐시만 대상으로 합니다.
-          path: |
-            /opt/ros/humble
-            ~/.cache/pip
-          key: ${{ runner.os }}-ros-humble-deps-v5-${{ hashFiles('src/picar_pkg/package.xml', 'src/picar_pkg/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-ros-humble-deps-v5-          restore-keys: |
-            ${{ runner.os }}-ros-humble-deps-v4-
-      - name: Install Dependencies
+
+      - name: Install ROS 2 and Python dependencies
         run: |
+          sudo apt-get update && sudo apt-get install -y \
+            curl gnupg lsb-release xvfb
+          sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
           sudo apt-get update
-          sudo apt-get install -y python3-rosdep xvfb
-          sudo rosdep init || true
-          rosdep update
-          rosdep install --from-paths src --ignore-src -y -r --rosdistro humble
-        env:
-          DEBIAN_FRONTEND: noninteractive
+          sudo apt-get install -y ros-humble-ros-base ros-dev-tools
+          pip install -r src/picar_pkg/requirements.txt
+      
+      # [새로운 구조] 가상 화면을 먼저 켭니다.
       - name: Start virtual framebuffer
         run: Xvfb :99 -screen 0 1024x768x16 &
 
-      - name: Build and Run All Tests (ignore failures)
+      # [새로운 구조] 빌드와 모든 테스트를 하나의 스텝에서 실행합니다.
+      - name: Build and Run All Tests
+        # 모든 GUI 출력을 가상 화면으로 보냅니다.
         env:
           DISPLAY: ":99"
         run: |
+          # ROS 2 환경 활성화
           source /opt/ros/humble/setup.bash
           
-          echo "--- Starting build (failures will be ignored) ---"
-          colcon build --packages-select picar_pkg || true
+          # 먼저 빌드를 수행합니다.
+          colcon build --packages-select picar_pkg
           
-          echo "--- Starting test (failures will be ignored) ---"
-          source install/setup.bash || true
-          colcon test --packages-select picar_pkg --event-handlers console_direct+ || true
-
-      - name: Upload Build Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: |
-            build/
-            install/
-            log/
-
+          # 빌드된 환경을 활성화하고 모든 테스트를 실행합니다.
+          source install/setup.bash
+          colcon test --packages-select picar_pkg --event-handlers console_direct+
