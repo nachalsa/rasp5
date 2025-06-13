@@ -27,19 +27,16 @@ jobs:
 
       - name: Lint with Pylint
         run: |
-          # Pylint 결과를 pylint-report.txt 파일로 저장합니다.
-          # --rcfile=.pylintrc 옵션으로 설정 파일 경로를 명확히 지정합니다.
           pylint --disable=E0401,C0114,C0116,R0903 \
                  --rcfile=.pylintrc \
                  src/picar_pkg > pylint-report.txt \
                  || true
 
       - name: Upload Pylint report
-        # Pylint 결과 파일을 아티팩트로 업로드합니다.
         uses: actions/upload-artifact@v4
         with:
-          name: pylint-report # 아티팩트의 이름
-          path: pylint-report.txt # 업로드할 파일 경로
+          name: pylint-report
+          path: pylint-report.txt
 
   build-and-test:
     needs: linting
@@ -63,7 +60,18 @@ jobs:
         env:
           DISPLAY: ":99"
         run: |
-          source /opt/ros/humble/setup.bash
-          colcon build --packages-select picar_pkg
-          source install/setup.bash
-          colcon test --packages-select picar_pkg --event-handlers console_direct+
+          # 빌드 및 테스트 결과를 build-test-report.txt 파일로 저장합니다.
+          # 2>&1 을 추가하여 에러 로그까지 모두 저장합니다.
+          {
+            source /opt/ros/humble/setup.bash
+            colcon build --packages-select picar_pkg
+            source install/setup.bash
+            colcon test --packages-select picar_pkg --event-handlers console_direct+
+          } > build-test-report.txt 2>&1
+
+      - name: Upload Build and Test report
+        # 빌드/테스트 결과 파일을 아티팩트로 업로드합니다.
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-test-report # 아티팩트의 이름
+          path: build-test-report.txt # 업로드할 파일 경로
