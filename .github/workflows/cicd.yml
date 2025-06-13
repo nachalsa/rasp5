@@ -66,7 +66,7 @@ jobs:
         run: Xvfb :99 -screen 0 1024x768x16 &
 
       # ★★★★★ 이 단계가 핵심 수정 사항입니다 ★★★★★
-      - name: Build and Run All Tests (ignore failures)
+      - name: Build and Run All Tests (if)
         env:
           DISPLAY: ":99"
         run: |
