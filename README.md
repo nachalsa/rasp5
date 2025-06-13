@@ -85,5 +85,36 @@ graph TD
     %% 스타일링
     style D fill:#f9f,stroke:#333,stroke-width:4px
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
+    
+    
+### CombinedMecanumController UML 클래스 다이어그램
+
+```mermaid
+classDiagram
+    class CombinedMecanumController {
+        %% Attributes (Data)
+        +actions: List
+        +button_sub: Subscription
+        +cmd_vel_pub: Publisher
+        #is_running: bool
+        #should_stop: bool
+        #sequence_thread: Thread
+
+        %% Public Methods (API)
+        +button_state_callback(msg)
+        +button_array_callback(msg)
+        +start_sequence()
+        +reset_sequence()
+        +emergency_stop()
+
+        %% Private Methods (Internal Logic)
+        - _run_sequence()
+        - _execute_action(action)
+        - _move_straight(speed, duration)
+        - _move_backward(speed, duration)
+        - _move_lateral_left(speed, duration)
+        - _move_lateral_right(speed, duration)
+        - _publish_twist(x, y, z)
+    }
 
 
