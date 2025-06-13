@@ -48,15 +48,17 @@ jobs:
         uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
-      - name: Cache Dependencies
+     - name: Cache Dependencies
         id: cache-deps
         uses: actions/cache@v4
         with:
+          # ★★★ /var/lib/apt/lists 를 제외하고, ROS 설치 경로와 pip 캐시만 대상으로 합니다.
           path: |
-            /var/lib/apt/lists
+            /opt/ros/humble
             ~/.cache/pip
-          key: ${{ runner.os }}-ros-humble-deps-v4-${{ hashFiles('src/picar_pkg/package.xml', 'src/picar_pkg/requirements.txt') }}
+          key: ${{ runner.os }}-ros-humble-deps-v5-${{ hashFiles('src/picar_pkg/package.xml', 'src/picar_pkg/requirements.txt') }}
           restore-keys: |
+            ${{ runner.os }}-ros-humble-deps-v5-          restore-keys: |
             ${{ runner.os }}-ros-humble-deps-v4-
       - name: Install Dependencies
         run: |
