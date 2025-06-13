@@ -52,35 +52,59 @@
 
 "자율주행이 아니라 정해진 경로만 이동하는 하드코딩된 로봇"의 코드를 HLD와 UML로 설명하는 것은 "신뢰성 높고 예측 가능한 **사전 정의된 시퀀스(Pre-defined Sequence) 기반 제어**" 설계 의도를 명확하게 보여줄 수 있습니다.
 
-### 로봇 제어 시스템 HLD (High-Level Design)
+ 
+### 로봇 제어 시스템 HLD (High-level Design)
 
 ```mermaid
 graph TD
-    %% 그룹 정의
     subgraph "입력 (Input)"
-        A[👤 사용자] -- 1. Press --> B(🔘 물리 버튼)
+        A(사용자) --> B(물리 버튼);
     end
 
     subgraph "처리 (Processing)"
-        C[<br>Button Driver]
-        D{<B>CombinedMecanumController</B><br><br><b>btfaster03.py</b>}
+        C(dr-motor Driver) --> D(<b>CombinedMecanumController</b><br><br>dr-br>dr-bt>faster83.pyc</b>);
     end
-
+    
     subgraph "출력 (Output)"
-        F[<br>Motor Driver]
-        G[<br>LED/GPIO Driver]
-        H(⚙️ 모터)
-        I(💡 LED)
+        F(dr-motor Driver) --> G(dr-GPIO Driver);
+        H(G) --> I(청색 LED);
     end
 
     %% 연결 정의 (데이터 흐름 순서)
-    B -- 2. Hardware Signal --> C
-    C -- "3. ROS2 Topic<br>/ros_robot_controller/button" --> D
-    D -- "4. ROS2 Topic<br>/controller/cmd_vel" --> F
-    D -- "5. ROS2 Topic<br>/gpio/*" --> G
-    F -- 6. Electrical Signal --> H
-    G -- 7. Electrical Signal --> I
+    B --> C;
+    C --> D;
+    D -- "4. ROS2 Topic<br>/controller/cmd_vel" --> F;
+    F --> G;
+    G --> H;
+    H --> I;
 
     %% 스타일링
-    style D fill:#f9f,stroke:#333,stroke-width:4px
+    style D fill:#f9f,stroke:#333,stroke-width:4px;
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
+    
+### 클래스 다이어그램 (Class Diagram)
+
+```mermaid
+classDiagram
+    class CombinedMecanumController {
+        <<Attributes (Data)>>
+        +NodeHandle nh
+        +Subscriber button_sub
+        +Publisher cmd_vel_pub
+        +thread run_sequence_thread_
+        -bool button_state_
+        
+        <<Public Methods (API)>>
+        +CombinedMecanumController()
+        +button_state_callback(msg)
+        +start_sequence()
+        +stop_sequence()
+        +reset_sequence()
+        +publish_twist()
+
+        <<Private Methods (Internal Logic)>>
+        -run_sequence()
+        -move_straight(speed, duration)
+        -move_diagonal(speed, duration)
+        -move_lateral(speed, duration)
+    }
