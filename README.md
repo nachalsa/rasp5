@@ -46,7 +46,6 @@
 10. 정지 및 주차 구간에서 정확한 라인 안에 주차가 되어야 하며, 완료의 의미로 모든 LED를 점멸해야 한다. **(-10점)**
 11. 1등, 2등, 3등으로 완주했을 경우, 등수별로 차등 가산점 부여 **(+15/+10/+5점)**
 
- 
 ---
 
 ## HLD+UML
@@ -87,9 +86,7 @@ graph TD
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
     
     
-### CombinedMecanumController UML 클래스 다이어그램
-
-```mermaid
+###
 classDiagram
     class CombinedMecanumController {
         %% Attributes (Data)
@@ -116,5 +113,3 @@ classDiagram
         - _move_lateral_right(speed, duration)
         - _publish_twist(x, y, z)
     }
-
-
