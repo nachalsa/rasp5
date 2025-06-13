@@ -80,12 +80,11 @@ graph TD
     %% 스타일링
     style D fill:#f9f,stroke:#333,stroke-width:4px;
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
-    
-    
-    
- ### 클래스 다이어그램 (Class Diagram)
+```    
 
-```mermaid      
+
+### 클래스 다이어그램 (Class Diagram)
+```mermaid
 classDiagram
     class CombinedMecanumController {
         <<Attributes (Data)>>
@@ -109,5 +108,4 @@ classDiagram
         -move_diagonal(speed, duration)
         -move_lateral(speed, duration)
     }
-
-    
+```    
