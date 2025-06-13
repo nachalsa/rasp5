@@ -86,8 +86,9 @@ graph TD
     classDef default fill:#fff,stroke:#333,stroke-width:2px;
     
     
-###
-classDiagram
+    
+    
+    classDiagram
     class CombinedMecanumController {
         %% Attributes (Data)
         +actions: List
